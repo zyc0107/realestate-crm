@@ -1,4 +1,4 @@
-const BASE = 'http://182.254.146.23:3001';
+const BASE = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
 export function getToken() {
   return localStorage.getItem('crm_token');
