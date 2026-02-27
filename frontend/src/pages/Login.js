@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { apiFetch } from '../api';
 
 export default function Login({ onLogin }) {
   const [mode, setMode] = useState('login');
@@ -10,12 +11,12 @@ export default function Login({ onLogin }) {
 
   const handleSubmit = async () => {
     setLoading(true); setError('');
-    const url = mode === 'login' ? 'http://182.254.146.23:3001/api/auth/login' : 'http://182.254.146.23:3001/api/auth/register';
+    const url = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
     const body = mode === 'login'
       ? { username: form.username, password: form.password }
       : { username: form.username, password: form.password, name: form.name, store_name: form.store_name };
     try {
-      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const res = await apiFetch(url, { method: 'POST', body: JSON.stringify(body) });
       const data = await res.json();
       if (!res.ok) { setError(data.error || '操作失败'); return; }
       localStorage.setItem('crm_token', data.token);
