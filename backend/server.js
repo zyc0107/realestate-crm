@@ -186,9 +186,9 @@ app.post('/api/properties', authMiddleware, (req, res) => {
   run(`INSERT INTO properties (id,title,address,area,price,min_price,unit_type,floor,total_floors,
     orientation,amenities,photo_url,description,status,owner_name,owner_phone,owner_wechat,notes,store_id,created_by)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, title, address, area, price, min_price, unit_type, floor, total_floors,
-     orientation, amenities, photo_url, description, status,
-     owner_name, owner_phone, owner_wechat, notes, req.user.store_id, req.user.id]);
+    [id, title||'', address||'', area||null, price||null, min_price||null, unit_type||'', floor||'', total_floors||'',
+     orientation||'', amenities||'', photo_url||'', description||'', status,
+     owner_name||'', owner_phone||'', owner_wechat||'', notes||'', req.user.store_id||null, req.user.id]);
 
   // Auto-create seller customer if owner info provided
   if (owner_name || owner_phone) {
@@ -214,9 +214,9 @@ app.put('/api/properties/:id', authMiddleware, (req, res) => {
   run(`UPDATE properties SET title=?,address=?,area=?,price=?,min_price=?,unit_type=?,floor=?,total_floors=?,
     orientation=?,amenities=?,photo_url=?,description=?,status=?,
     owner_name=?,owner_phone=?,owner_wechat=?,notes=?,updated_at=datetime('now') WHERE id=?`,
-    [title, address, area, price, min_price, unit_type, floor, total_floors,
-     orientation, amenities, photo_url, description, status,
-     owner_name, owner_phone, owner_wechat, notes, req.params.id]);
+    [title||'', address||'', area||null, price||null, min_price||null, unit_type||'', floor||'', total_floors||'',
+     orientation||'', amenities||'', photo_url||'', description||'', status,
+     owner_name||'', owner_phone||'', owner_wechat||'', notes||'', req.params.id]);
   res.json(get('SELECT * FROM properties WHERE id=?', [req.params.id]));
 });
 
@@ -254,8 +254,8 @@ app.post('/api/customers', authMiddleware, (req, res) => {
   run(`INSERT INTO customers (id,name,phone,wechat,customer_type,budget_min,budget_max,
     preferred_areas,requirements,source,grade,notes,linked_property_id,store_id,created_by)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, name, phone, wechat, customer_type, budget_min, budget_max,
-     preferred_areas, requirements, source, grade, notes, linked_property_id, req.user.store_id, req.user.id]);
+    [id, name||'', phone||'', wechat||'', customer_type, budget_min||null, budget_max||null,
+     preferred_areas||'', requirements||'', source||'', grade, notes||'', linked_property_id||null, req.user.store_id||null, req.user.id]);
   res.json(get('SELECT * FROM customers WHERE id=?', [id]));
 });
 
@@ -264,8 +264,8 @@ app.put('/api/customers/:id', authMiddleware, (req, res) => {
     preferred_areas, requirements, source, grade, notes } = req.body;
   run(`UPDATE customers SET name=?,phone=?,wechat=?,customer_type=?,budget_min=?,budget_max=?,
     preferred_areas=?,requirements=?,source=?,grade=?,notes=?,updated_at=datetime('now') WHERE id=?`,
-    [name, phone, wechat, customer_type, budget_min, budget_max,
-     preferred_areas, requirements, source, grade, notes, req.params.id]);
+    [name||'', phone||'', wechat||'', customer_type, budget_min||null, budget_max||null,
+     preferred_areas||'', requirements||'', source||'', grade, notes||'', req.params.id]);
   res.json(get('SELECT * FROM customers WHERE id=?', [req.params.id]));
 });
 
