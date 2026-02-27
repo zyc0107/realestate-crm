@@ -10,6 +10,8 @@ export default function Customers() {
   const [tab, setTab] = useState('all'); // all | buyer | seller
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [showDetail, setShowDetail] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [editItem, setEditItem] = useState(null);
   const empty = { name:'',phone:'',wechat:'',customer_type:'buyer',budget_min:'',budget_max:'',
     preferred_areas:'',requirements:'',source:'',grade:'C',notes:'' };
@@ -46,6 +48,12 @@ export default function Customers() {
   };
 
   const openEdit = (c) => { setEditItem(c); setForm(c); setShowForm(true); };
+  const openDetail = async (c) => {
+    const res = await apiFetch(`/api/customers/${c.id}`);
+    const data = await res.json();
+    setSelectedCustomer(data);
+    setShowDetail(true);
+  };
   const update = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   return (
@@ -71,10 +79,10 @@ export default function Customers() {
       <div className="table-container">
         <table className="table">
           <thead><tr>
-            <th>客户信息</th><th>类型</th><th>预算/价格</th><th>等级</th><th>意向区域</th><th>来源</th><th>操作</th>
+            <th>客户信息</th><th>类型</th><th>预算/价格</th><th>等级</th><th>意向区域</th><th>来源</th><th>最后回访</th><th>操作</th>
           </tr></thead>
           <tbody>
-            {customers.length === 0 && <tr><td colSpan={7} style={{ textAlign:'center', padding:40, color:'var(--text-muted)' }}>暂无客户</td></tr>}
+            {customers.length === 0 && <tr><td colSpan={8} style={{ textAlign:'center', padding:40, color:'var(--text-muted)' }}>暂无客户</td></tr>}
             {customers.map(c => (
               <tr key={c.id}>
                 <td>
@@ -97,7 +105,11 @@ export default function Customers() {
                 <td><span style={{ fontWeight:700, color: GRADE_COLORS[c.grade] }}>{c.grade}类</span></td>
                 <td style={{ fontSize:13 }}>{c.preferred_areas || '-'}</td>
                 <td style={{ fontSize:13 }}>{c.source || '-'}</td>
+                <td style={{ fontSize:12, color:'var(--text-muted)' }}>
+                  {c.last_follow_up_at ? new Date(c.last_follow_up_at).toLocaleDateString('zh-CN') : '暂无'}
+                </td>
                 <td>
+                  <button className="btn btn-sm" onClick={() => openDetail(c)} style={{ marginRight:6 }}>详情</button>
                   <button className="btn btn-sm" onClick={() => openEdit(c)}>编辑</button>
                 </td>
               </tr>
@@ -175,6 +187,120 @@ export default function Customers() {
             <div style={{ display:'flex', gap:10, justifyContent:'flex-end', marginTop:20 }}>
               <button className="btn" onClick={() => setShowForm(false)}>取消</button>
               <button className="btn btn-primary" onClick={save}>💾 保存</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDetail && selectedCustomer && (
+        <div className="modal-overlay" onClick={e => e.target===e.currentTarget && setShowDetail(false)}>
+          <div className="modal" style={{ maxWidth:700, maxHeight:'90vh', overflowY:'auto' }}>
+            <div className="modal-header">
+              <h2>👤 客户详情 - {selectedCustomer.name}</h2>
+              <button onClick={() => setShowDetail(false)} style={{ background:'none',border:'none',fontSize:20,cursor:'pointer',color:'var(--text-muted)' }}>✕</button>
+            </div>
+
+            {/* 基本信息 */}
+            <div style={{ marginBottom:24, padding:16, background:'var(--bg-hover)', borderRadius:8 }}>
+              <h3 style={{ fontSize:16, fontWeight:600, marginBottom:12 }}>基本信息</h3>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, fontSize:14 }}>
+                <div><span style={{ color:'var(--text-muted)' }}>姓名：</span>{selectedCustomer.name}</div>
+                <div><span style={{ color:'var(--text-muted)' }}>类型：</span>{TYPE_LABELS[selectedCustomer.customer_type]}</div>
+                <div><span style={{ color:'var(--text-muted)' }}>电话：</span>{selectedCustomer.phone || '-'}</div>
+                <div><span style={{ color:'var(--text-muted)' }}>微信：</span>{selectedCustomer.wechat || '-'}</div>
+                <div><span style={{ color:'var(--text-muted)' }}>等级：</span><span style={{ fontWeight:700, color:GRADE_COLORS[selectedCustomer.grade] }}>{selectedCustomer.grade}类</span></div>
+                <div><span style={{ color:'var(--text-muted)' }}>来源：</span>{selectedCustomer.source || '-'}</div>
+                {selectedCustomer.customer_type === 'buyer' && (
+                  <>
+                    <div><span style={{ color:'var(--text-muted)' }}>预算：</span>{selectedCustomer.budget_min||'?'}~{selectedCustomer.budget_max||'?'}万</div>
+                    <div><span style={{ color:'var(--text-muted)' }}>意向区域：</span>{selectedCustomer.preferred_areas || '-'}</div>
+                  </>
+                )}
+              </div>
+              {selectedCustomer.requirements && (
+                <div style={{ marginTop:12 }}><span style={{ color:'var(--text-muted)' }}>需求：</span>{selectedCustomer.requirements}</div>
+              )}
+              {selectedCustomer.notes && (
+                <div style={{ marginTop:12 }}><span style={{ color:'var(--text-muted)' }}>备注：</span>{selectedCustomer.notes}</div>
+              )}
+            </div>
+
+            {/* 回访记录 */}
+            <div>
+              <h3 style={{ fontSize:16, fontWeight:600, marginBottom:12 }}>📝 回访记录 ({selectedCustomer.followUps?.length || 0})</h3>
+              {(!selectedCustomer.followUps || selectedCustomer.followUps.length === 0) ? (
+                <div style={{ textAlign:'center', padding:40, color:'var(--text-muted)', background:'var(--bg-hover)', borderRadius:8 }}>
+                  暂无回访记录
+                </div>
+              ) : (
+                <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                  {selectedCustomer.followUps.map(f => (
+                    <div key={f.id} style={{ padding:16, background:'var(--bg-hover)', borderRadius:8, borderLeft:'3px solid var(--accent)' }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                        <div style={{ fontSize:13, color:'var(--text-muted)' }}>
+                          {new Date(f.created_at).toLocaleString('zh-CN')}
+                        </div>
+                        {f.method && (
+                          <span style={{ fontSize:12, padding:'2px 8px', background:'var(--accent)', color:'white', borderRadius:12 }}>
+                            {f.method}
+                          </span>
+                        )}
+                      </div>
+                      {f.content && (
+                        <div style={{ fontSize:14, lineHeight:1.6, marginBottom:8, whiteSpace:'pre-wrap' }}>
+                          {f.content}
+                        </div>
+                      )}
+                      {f.ai_analysis && (() => {
+                        try {
+                          const analysis = JSON.parse(f.ai_analysis);
+                          return (
+                            <div style={{ marginTop:12, padding:12, background:'rgba(59,130,246,0.1)', borderRadius:6 }}>
+                              <div style={{ fontSize:12, fontWeight:600, color:'var(--accent)', marginBottom:6 }}>🤖 AI分析</div>
+                              {analysis.intention_level && (
+                                <div style={{ fontSize:13, marginBottom:4 }}>
+                                  <span style={{ color:'var(--text-muted)' }}>意向程度：</span>
+                                  <span style={{ fontWeight:600 }}>{analysis.intention_level}</span>
+                                </div>
+                              )}
+                              {analysis.summary && (
+                                <div style={{ fontSize:13, color:'var(--text-muted)' }}>{analysis.summary}</div>
+                              )}
+                            </div>
+                          );
+                        } catch { return null; }
+                      })()}
+                      {f.result && (
+                        <div style={{ fontSize:13, marginTop:8, color:'var(--text-muted)' }}>
+                          <span style={{ fontWeight:600 }}>结果：</span>{f.result}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 待办提醒 */}
+            {selectedCustomer.reminders && selectedCustomer.reminders.length > 0 && (
+              <div style={{ marginTop:24 }}>
+                <h3 style={{ fontSize:16, fontWeight:600, marginBottom:12 }}>🔔 待办提醒 ({selectedCustomer.reminders.length})</h3>
+                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                  {selectedCustomer.reminders.map(r => (
+                    <div key={r.id} style={{ padding:12, background:'rgba(251,191,36,0.1)', borderRadius:8, borderLeft:'3px solid #f59e0b' }}>
+                      <div style={{ fontWeight:600, marginBottom:4 }}>{r.title}</div>
+                      <div style={{ fontSize:13, color:'var(--text-muted)' }}>
+                        ⏰ {new Date(r.remind_at).toLocaleString('zh-CN')}
+                      </div>
+                      {r.content && <div style={{ fontSize:13, marginTop:4 }}>{r.content}</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div style={{ marginTop:20, textAlign:'right' }}>
+              <button className="btn btn-primary" onClick={() => setShowDetail(false)}>关闭</button>
             </div>
           </div>
         </div>

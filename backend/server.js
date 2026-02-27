@@ -229,12 +229,14 @@ app.delete('/api/properties/:id', authMiddleware, (req, res) => {
 app.get('/api/customers', authMiddleware, (req, res) => {
   const { grade, search, customer_type } = req.query;
   const f = getStoreFilter(req.user);
-  let sql = 'SELECT * FROM customers WHERE 1=1' + f.sql;
+  let sql = `SELECT c.*,
+    (SELECT MAX(created_at) FROM follow_ups WHERE customer_id = c.id) as last_follow_up_at
+    FROM customers c WHERE 1=1` + f.sql.replace('store_id', 'c.store_id');
   const params = [...f.params];
-  if (grade) { sql += ' AND grade=?'; params.push(grade); }
-  if (customer_type) { sql += ' AND customer_type=?'; params.push(customer_type); }
-  if (search) { sql += ' AND (name LIKE ? OR phone LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
-  sql += ' ORDER BY created_at DESC';
+  if (grade) { sql += ' AND c.grade=?'; params.push(grade); }
+  if (customer_type) { sql += ' AND c.customer_type=?'; params.push(customer_type); }
+  if (search) { sql += ' AND (c.name LIKE ? OR c.phone LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
+  sql += ' ORDER BY c.created_at DESC';
   res.json(all(sql, params));
 });
 
