@@ -5,7 +5,7 @@ const GRADE_COLORS = { A:'#ef4444', B:'#f59e0b', C:'#3b82f6', D:'#6b7280' };
 const TYPE_LABELS = { buyer:'买家', seller:'卖家' };
 const TYPE_COLORS = { buyer:'#3b82f6', seller:'#10b981' };
 
-export default function Customers() {
+export default function Customers({ user }) {
   const [customers, setCustomers] = useState([]);
   const [tab, setTab] = useState('all'); // all | buyer | seller
   const [search, setSearch] = useState('');
@@ -184,10 +184,17 @@ export default function Customers() {
               <input type="checkbox" checked={selectedIds.length === customers.length && customers.length > 0}
                 onChange={toggleSelectAll} />
             </th>
-            <th>客户信息</th><th>类型</th><th>预算/价格</th><th>关联房源</th><th>等级</th><th>意向区域</th><th>来源</th><th>最后回访</th><th>操作</th>
+            <th>客户信息</th><th>类型</th><th>预算/价格</th><th>关联房源</th><th>等级</th><th>意向区域</th><th>来源</th>
+            {user?.role === 'admin' && (
+              <>
+                <th>所属门店</th>
+                <th>所属经纪人</th>
+              </>
+            )}
+            <th>最后回访</th><th>操作</th>
           </tr></thead>
           <tbody>
-            {customers.length === 0 && <tr><td colSpan={10} style={{ textAlign:'center', padding:40, color:'var(--text-muted)' }}>暂无客户</td></tr>}
+            {customers.length === 0 && <tr><td colSpan={user?.role === 'admin' ? 12 : 10} style={{ textAlign:'center', padding:40, color:'var(--text-muted)' }}>暂无客户</td></tr>}
             {customers.map(c => (
               <tr key={c.id}>
                 <td>
@@ -208,15 +215,28 @@ export default function Customers() {
                 <td>
                   {c.customer_type === 'buyer'
                     ? (c.budget_min||c.budget_max) ? `${c.budget_min||'?'}~${c.budget_max||'?'}万` : '-'
-                    : '-'
+                    : (c.property_min_price && c.property_price)
+                      ? `${c.property_min_price}~${c.property_price}万`
+                      : '-'
                   }
                 </td>
                 <td style={{ fontSize:12, color:'var(--text-muted)' }}>
-                  {c.customer_type === 'seller' && c.notes ? c.notes.substring(0,20) : '-'}
+                  {c.customer_type === 'seller' && c.property_community
+                    ? `${c.property_community} ${c.property_unit_room || ''}`
+                    : '-'
+                  }
                 </td>
                 <td><span style={{ fontWeight:700, color: GRADE_COLORS[c.grade] }}>{c.grade}类</span></td>
                 <td style={{ fontSize:13 }}>{c.preferred_areas || '-'}</td>
                 <td style={{ fontSize:13 }}>{c.source || '-'}</td>
+                {user?.role === 'admin' && (
+                  <>
+                    <td style={{ fontSize:13 }}>{c.store_name || '-'}</td>
+                    <td style={{ fontSize:13 }}>
+                      {c.agent_name ? `${c.agent_name}${c.agent_id ? ` (${c.agent_id})` : ''}` : '-'}
+                    </td>
+                  </>
+                )}
                 <td style={{ fontSize:12, color:'var(--text-muted)' }}>
                   {c.last_follow_up_at ? new Date(c.last_follow_up_at).toLocaleDateString('zh-CN') : '暂无'}
                 </td>

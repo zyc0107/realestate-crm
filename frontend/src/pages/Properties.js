@@ -4,15 +4,17 @@ import React, { useState, useEffect } from 'react';
 const STATUS_LABELS = { available: '在售', sold: '已售', suspended: '暂停' };
 const STATUS_COLORS = { available: '#10b981', sold: '#ef4444', suspended: '#f59e0b' };
 
-export default function Properties() {
+export default function Properties({ user }) {
   const [properties, setProperties] = useState([]);
   const [showForm, setShowForm] = useState(false);
+  const [showDetail, setShowDetail] = useState(false);
+  const [selectedProperty, setSelectedProperty] = useState(null);
   const [editItem, setEditItem] = useState(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [selectedIds, setSelectedIds] = useState([]);
   const [showImport, setShowImport] = useState(false);
-  const empty = { community_name:'',address:'',area:'',price:'',min_price:'',rooms:'',halls:'',baths:'',unit_room:'',property_type:'住宅',decoration:'',build_year:'',urgent:false,floor:'',total_floors:'',
+  const empty = { community_name:'',address:'',area:'',price:'',min_price:'',rooms:'',halls:'',baths:'',unit:'',room_number:'',unit_room:'',property_type:'住宅',decoration:'',build_year:'',urgent:false,floor:'',total_floors:'',
     orientation:'',amenities:'',photo_url:'',description:'',status:'available',
     owner_name:'',owner_phone:'',owner_wechat:'',notes:'' };
   const [form, setForm] = useState(empty);
@@ -28,14 +30,25 @@ export default function Properties() {
   };
 
   const save = async () => {
-    if (!form.community_name || !form.address) {
-      alert('请填写小区名称和详细地址');
+    if (!form.community_name) {
+      alert('请填写小区名称');
       return;
     }
     try {
+      // 自动生成地址: 小区名称 + 单元 + 房号
+      const generatedAddress = `${form.community_name}${form.unit || ''}${form.room_number || ''}`;
+      // 自动生成unit_room: 单元 + 房号
+      const generatedUnitRoom = `${form.unit || ''}${form.room_number || ''}`;
+
+      const dataToSave = {
+        ...form,
+        address: generatedAddress,
+        unit_room: generatedUnitRoom
+      };
+
       const method = editItem ? 'PUT' : 'POST';
       const url = editItem ? `/api/properties/${editItem.id}` : '/api/properties';
-      const res = await apiFetch(url, { method, body: JSON.stringify(form) });
+      const res = await apiFetch(url, { method, body: JSON.stringify(dataToSave) });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || '保存失败');
@@ -53,7 +66,30 @@ export default function Properties() {
     load();
   };
 
-  const openEdit = (p) => { setEditItem(p); setForm(p); setShowForm(true); };
+  const viewDetail = (p) => {
+    setSelectedProperty(p);
+    setShowDetail(true);
+  };
+
+  const openEdit = (p) => {
+    // 智能拆分unit_room为unit和room_number
+    let unit = '';
+    let room_number = '';
+    if (p.unit_room) {
+      // 尝试匹配"3单元1201"这样的格式
+      const match = p.unit_room.match(/^(.+?单元)?(.*)$/);
+      if (match) {
+        unit = match[1] || '';
+        room_number = match[2] || '';
+      } else {
+        // 如果匹配失败,保持原值
+        unit = p.unit_room;
+      }
+    }
+    setEditItem(p);
+    setForm({ ...p, unit, room_number });
+    setShowForm(true);
+  };
   const update = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const toggleSelect = (id) => {
@@ -173,10 +209,17 @@ export default function Properties() {
               <input type="checkbox" checked={selectedIds.length === properties.length && properties.length > 0}
                 onChange={toggleSelectAll} />
             </th>
-            <th>房源信息</th><th>价格</th><th>业主信息</th><th>状态</th><th>操作</th>
+            <th>房源信息</th><th>面积</th><th>价格</th><th>业主信息</th>
+            {user?.role === 'admin' && (
+              <>
+                <th>所属门店</th>
+                <th>经纪人</th>
+              </>
+            )}
+            <th>状态</th><th>操作</th>
           </tr></thead>
           <tbody>
-            {properties.length === 0 && <tr><td colSpan={6} style={{ textAlign:'center', padding:40, color:'var(--text-muted)' }}>暂无房源，点击「录入房源」添加</td></tr>}
+            {properties.length === 0 && <tr><td colSpan={user?.role === 'admin' ? 9 : 7} style={{ textAlign:'center', padding:40, color:'var(--text-muted)' }}>暂无房源，点击「录入房源」添加</td></tr>}
             {properties.map(p => (
               <tr key={p.id}>
                 <td>
@@ -184,12 +227,17 @@ export default function Properties() {
                     onChange={() => toggleSelect(p.id)} />
                 </td>
                 <td>
-                  <div style={{ fontWeight:600 }}>{p.community_name || p.title}</div>
-                  <div style={{ fontSize:12, color:'var(--text-muted)' }}>{p.address}</div>
+                  <div style={{ fontWeight:600 }}>
+                    {p.community_name || p.title}
+                    {p.unit_room && <span style={{ marginLeft:6, color:'var(--text-muted)', fontWeight:400 }}>{p.unit_room}</span>}
+                  </div>
                   <div style={{ fontSize:12, color:'var(--text-muted)' }}>
-                    {p.area}㎡ {p.rooms && `${p.rooms}室${p.halls}厅${p.baths}卫`} {p.floor && `${p.floor}/${p.total_floors}层`}
+                    {p.rooms && `${p.rooms}室${p.halls}厅${p.baths}卫`} {p.floor && `${p.floor}/${p.total_floors}层`}
                     {p.urgent && <span style={{ marginLeft:6, color:'#ef4444', fontWeight:600 }}>🔥急售</span>}
                   </div>
+                </td>
+                <td>
+                  <div style={{ fontWeight:600 }}>{p.area}㎡</div>
                 </td>
                 <td>
                   <div style={{ fontWeight:600, color:'var(--accent)' }}>¥{p.price}万</div>
@@ -200,11 +248,20 @@ export default function Properties() {
                   {p.owner_phone && <div style={{ fontSize:12, color:'var(--text-muted)' }}>📞 {p.owner_phone}</div>}
                   {p.owner_wechat && <div style={{ fontSize:12, color:'var(--text-muted)' }}>💬 {p.owner_wechat}</div>}
                 </td>
+                {user?.role === 'admin' && (
+                  <>
+                    <td style={{ fontSize:13 }}>{p.store_name || '-'}</td>
+                    <td style={{ fontSize:13 }}>
+                      {p.agent_name ? `${p.agent_name}${p.agent_id ? ` (${p.agent_id})` : ''}` : '-'}
+                    </td>
+                  </>
+                )}
                 <td><span style={{ padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:600,
                   background: STATUS_COLORS[p.status]+'22', color: STATUS_COLORS[p.status] }}>
                   {STATUS_LABELS[p.status]}
                 </span></td>
                 <td>
+                  <button className="btn btn-sm" onClick={() => viewDetail(p)} style={{ marginRight:6 }}>详情</button>
                   <button className="btn btn-sm" onClick={() => openEdit(p)} style={{ marginRight:6 }}>编辑</button>
                   <button className="btn btn-sm btn-danger" onClick={() => del(p.id)}>删除</button>
                 </td>
@@ -226,13 +283,17 @@ export default function Properties() {
                 <label>小区名称 *</label>
                 <input value={form.community_name} onChange={e=>update('community_name',e.target.value)} placeholder="例：碧桂园·天璟" />
               </div>
-              <div className="form-group" style={{ gridColumn:'1/-1' }}>
-                <label>详细地址 *</label>
-                <input value={form.address} onChange={e=>update('address',e.target.value)} placeholder="楼栋号、单元号、房号" />
+              <div className="form-group">
+                <label>单元</label>
+                <input value={form.unit} onChange={e=>update('unit',e.target.value)} placeholder="例：3单元" />
               </div>
               <div className="form-group">
-                <label>单元/房号</label>
-                <input value={form.unit_room} onChange={e=>update('unit_room',e.target.value)} placeholder="例：3单元1201" />
+                <label>房号</label>
+                <input value={form.room_number} onChange={e=>update('room_number',e.target.value)} placeholder="例：1201" />
+              </div>
+              <div className="form-group">
+                <label>总楼层</label>
+                <input value={form.total_floors} onChange={e=>update('total_floors',e.target.value)} placeholder="25" />
               </div>
               <div className="form-group">
                 <label>房源类型</label>
@@ -274,14 +335,6 @@ export default function Properties() {
               <div className="form-group">
                 <label>建成年份</label>
                 <input type="number" value={form.build_year} onChange={e=>update('build_year',e.target.value)} placeholder="2018" />
-              </div>
-              <div className="form-group">
-                <label>所在楼层</label>
-                <input value={form.floor} onChange={e=>update('floor',e.target.value)} placeholder="8" />
-              </div>
-              <div className="form-group">
-                <label>总楼层</label>
-                <input value={form.total_floors} onChange={e=>update('total_floors',e.target.value)} placeholder="25" />
               </div>
               <div className="form-group">
                 <label>朝向</label>
@@ -368,6 +421,73 @@ export default function Properties() {
               <div style={{ marginTop:16, fontSize:12, color:'var(--text-muted)' }}>
                 💡 提示：请确保Excel文件格式正确，必填字段为「详细地址」
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDetail && selectedProperty && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth:700, maxHeight:'90vh', overflowY:'auto' }}>
+            <div className="modal-header">
+              <h2>🏠 房源详情</h2>
+              <button onClick={() => setShowDetail(false)} style={{ background:'none',border:'none',fontSize:20,cursor:'pointer',color:'var(--text-muted)' }}>✕</button>
+            </div>
+
+            {/* 基本信息 */}
+            <div style={{ marginBottom:24, padding:16, background:'var(--bg-hover)', borderRadius:8 }}>
+              <h3 style={{ fontSize:16, fontWeight:600, marginBottom:12 }}>基本信息</h3>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, fontSize:14 }}>
+                <div><span style={{ color:'var(--text-muted)' }}>小区名称：</span>{selectedProperty.community_name}</div>
+                <div><span style={{ color:'var(--text-muted)' }}>单元房号：</span>{selectedProperty.unit_room || '-'}</div>
+                <div><span style={{ color:'var(--text-muted)' }}>房源类型：</span>{selectedProperty.property_type}</div>
+                <div><span style={{ color:'var(--text-muted)' }}>建筑面积：</span>{selectedProperty.area}㎡</div>
+                <div><span style={{ color:'var(--text-muted)' }}>户型：</span>{selectedProperty.rooms}室{selectedProperty.halls}厅{selectedProperty.baths}卫</div>
+                <div><span style={{ color:'var(--text-muted)' }}>楼层：</span>{selectedProperty.floor || '-'}/{selectedProperty.total_floors || '-'}层</div>
+                <div><span style={{ color:'var(--text-muted)' }}>朝向：</span>{selectedProperty.orientation || '-'}</div>
+                <div><span style={{ color:'var(--text-muted)' }}>装修：</span>{selectedProperty.decoration || '-'}</div>
+                <div><span style={{ color:'var(--text-muted)' }}>建成年份：</span>{selectedProperty.build_year || '-'}</div>
+                <div><span style={{ color:'var(--text-muted)' }}>状态：</span>
+                  <span style={{ padding:'2px 8px', borderRadius:12, fontSize:12, fontWeight:600,
+                    background: STATUS_COLORS[selectedProperty.status]+'22', color: STATUS_COLORS[selectedProperty.status] }}>
+                    {STATUS_LABELS[selectedProperty.status]}
+                  </span>
+                </div>
+              </div>
+              {selectedProperty.amenities && (
+                <div style={{ marginTop:12 }}><span style={{ color:'var(--text-muted)' }}>配套设施：</span>{selectedProperty.amenities}</div>
+              )}
+            </div>
+
+            {/* 价格信息 */}
+            <div style={{ marginBottom:24, padding:16, background:'var(--bg-hover)', borderRadius:8 }}>
+              <h3 style={{ fontSize:16, fontWeight:600, marginBottom:12 }}>价格信息</h3>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, fontSize:14 }}>
+                <div><span style={{ color:'var(--text-muted)' }}>挂牌价格：</span><span style={{ fontWeight:600, color:'var(--accent)' }}>¥{selectedProperty.price}万</span></div>
+                <div><span style={{ color:'var(--text-muted)' }}>业主最低价：</span><span style={{ fontWeight:600, color:'#f59e0b' }}>¥{selectedProperty.min_price || '-'}万</span></div>
+              </div>
+            </div>
+
+            {/* 业主信息 */}
+            <div style={{ marginBottom:24, padding:16, background:'var(--bg-hover)', borderRadius:8 }}>
+              <h3 style={{ fontSize:16, fontWeight:600, marginBottom:12 }}>业主信息</h3>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, fontSize:14 }}>
+                <div><span style={{ color:'var(--text-muted)' }}>业主姓名：</span>{selectedProperty.owner_name || '-'}</div>
+                <div><span style={{ color:'var(--text-muted)' }}>业主电话：</span>{selectedProperty.owner_phone || '-'}</div>
+                <div style={{ gridColumn:'1/-1' }}><span style={{ color:'var(--text-muted)' }}>业主微信：</span>{selectedProperty.owner_wechat || '-'}</div>
+              </div>
+            </div>
+
+            {/* 备注信息 */}
+            {selectedProperty.notes && (
+              <div style={{ marginBottom:24, padding:16, background:'var(--bg-hover)', borderRadius:8 }}>
+                <h3 style={{ fontSize:16, fontWeight:600, marginBottom:12 }}>备注信息</h3>
+                <div style={{ fontSize:14, lineHeight:1.6, whiteSpace:'pre-wrap' }}>{selectedProperty.notes}</div>
+              </div>
+            )}
+
+            <div style={{ marginTop:20, textAlign:'right' }}>
+              <button className="btn btn-primary" onClick={() => setShowDetail(false)}>关闭</button>
             </div>
           </div>
         </div>

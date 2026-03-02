@@ -217,11 +217,18 @@ app.post('/api/user/update-nickname', authMiddleware, (req, res) => {
 app.get('/api/properties', authMiddleware, (req, res) => {
   const { status, search } = req.query;
   const f = getDataFilter(req.user, { includeCreatedBy: true });
-  let sql = 'SELECT * FROM properties WHERE 1=1' + f.sql;
+  let sql = `SELECT p.*,
+    s.name as store_name,
+    u.name as agent_name,
+    u.agent_id as agent_id
+    FROM properties p
+    LEFT JOIN stores s ON p.store_id = s.id
+    LEFT JOIN users u ON p.created_by = u.id
+    WHERE 1=1` + f.sql;
   const params = [...f.params];
-  if (status) { sql += ' AND status=?'; params.push(status); }
-  if (search) { sql += ' AND (title LIKE ? OR address LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
-  sql += ' ORDER BY created_at DESC';
+  if (status) { sql += ' AND p.status=?'; params.push(status); }
+  if (search) { sql += ' AND (p.title LIKE ? OR p.address LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
+  sql += ' ORDER BY p.created_at DESC';
   res.json(all(sql, params));
 });
 
@@ -325,8 +332,19 @@ app.get('/api/customers', authMiddleware, (req, res) => {
   const { grade, search, customer_type } = req.query;
   const f = getDataFilter(req.user, { tableAlias: 'c', includeCreatedBy: true });
   let sql = `SELECT c.*,
-    (SELECT MAX(created_at) FROM follow_ups WHERE customer_id = c.id) as last_follow_up_at
-    FROM customers c WHERE 1=1` + f.sql;
+    (SELECT MAX(created_at) FROM follow_ups WHERE customer_id = c.id) as last_follow_up_at,
+    p.min_price as property_min_price,
+    p.price as property_price,
+    p.community_name as property_community,
+    p.unit_room as property_unit_room,
+    s.name as store_name,
+    u.name as agent_name,
+    u.agent_id as agent_id
+    FROM customers c
+    LEFT JOIN properties p ON c.linked_property_id = p.id
+    LEFT JOIN stores s ON c.store_id = s.id
+    LEFT JOIN users u ON c.created_by = u.id
+    WHERE 1=1` + f.sql;
   const params = [...f.params];
   if (grade) { sql += ' AND c.grade=?'; params.push(grade); }
   if (customer_type) { sql += ' AND c.customer_type=?'; params.push(customer_type); }
