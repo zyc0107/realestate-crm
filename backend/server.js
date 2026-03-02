@@ -535,6 +535,340 @@ app.post('/api/ai/analyze-chat', authMiddleware, async (req, res) => {
   }
 });
 
+// ==================== AI增强功能 ====================
+
+// 1. 智能客户画像分析
+app.post('/api/ai/customer-profile', authMiddleware, async (req, res) => {
+  const { customer_id } = req.body;
+  if (!customer_id) return res.status(400).json({ error: '请提供客户ID' });
+
+  try {
+    const key = getApiKey(req.user.store_id);
+
+    // 获取客户完整信息
+    const customer = get('SELECT * FROM customers WHERE id=?', [customer_id]);
+    if (!customer) return res.status(404).json({ error: '客户不存在' });
+
+    // 获取回访记录
+    const followUps = all('SELECT * FROM follow_ups WHERE customer_id=? ORDER BY created_at DESC LIMIT 10', [customer_id]);
+
+    // 获取浏览过的房源（通过交易记录）
+    const viewedProperties = all(`
+      SELECT p.* FROM properties p
+      JOIN transactions t ON p.id = t.property_id
+      WHERE t.customer_id=?
+      ORDER BY t.created_at DESC LIMIT 5
+    `, [customer_id]);
+
+    const prompt = `你是专业的房产中介AI助手。请分析以下客户信息，生成详细的客户画像。
+
+客户基本信息：
+- 姓名：${customer.name}
+- 类型：${customer.customer_type === 'buyer' ? '买家' : '卖家'}
+- 预算：${customer.budget_min || '?'}-${customer.budget_max || '?'}万
+- 意向区域：${customer.preferred_areas || '未填写'}
+- 需求描述：${customer.requirements || '未填写'}
+- 来源：${customer.source || '未知'}
+- 等级：${customer.grade}类
+
+回访记录（最近10条）：
+${followUps.map((f, i) => `${i+1}. [${f.created_at}] ${f.content}`).join('\n') || '暂无回访记录'}
+
+浏览过的房源：
+${viewedProperties.map((p, i) => `${i+1}. ${p.community_name} ${p.area}㎡ ${p.rooms}室${p.halls}厅 ${p.price}万`).join('\n') || '暂无浏览记录'}
+
+请以JSON格式输出（只输出JSON，不要其他内容）：
+{
+  "purchase_motivation": "购房动机分析（如：刚需自住/改善换房/投资等）",
+  "urgency_level": "紧迫性（高/中/低）",
+  "urgency_reason": "紧迫性原因",
+  "real_budget": {
+    "min": 实际预算下限（数字）,
+    "max": 实际预算上限（数字）,
+    "analysis": "预算分析说明"
+  },
+  "preferences": {
+    "location": ["偏好区域1", "偏好区域2"],
+    "property_type": "偏好房型（如：3室2厅）",
+    "floor": "偏好楼层",
+    "orientation": "偏好朝向",
+    "decoration": "偏好装修",
+    "other": ["其他偏好1", "其他偏好2"]
+  },
+  "concerns": ["主要顾虑1", "主要顾虑2", "主要顾虑3"],
+  "deal_probability": 成交概率评分（0-100的数字）,
+  "deal_probability_analysis": "成交概率分析说明",
+  "follow_up_strategy": {
+    "frequency": "建议回访频率（如：每3天）",
+    "focus_points": ["重点关注1", "重点关注2"],
+    "suggested_actions": ["建议行动1", "建议行动2"],
+    "话术建议": "具体的沟通话术"
+  },
+  "risk_factors": ["风险因素1", "风险因素2"],
+  "summary": "客户画像总结（100字以内）"
+}`;
+
+    const analysisText = await callDeepSeek(key, prompt);
+    let profile;
+    try {
+      profile = JSON.parse(analysisText.replace(/```json|```/g, '').trim());
+    } catch {
+      profile = { summary: analysisText, deal_probability: 50 };
+    }
+
+    // 保存画像到数据库（可以添加一个customer_profiles表）
+    res.json({ profile, customer });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '客户画像分析失败' });
+  }
+});
+
+// 2. 智能房源推荐
+app.post('/api/ai/recommend-properties', authMiddleware, async (req, res) => {
+  const { customer_id } = req.body;
+  if (!customer_id) return res.status(400).json({ error: '请提供客户ID' });
+
+  try {
+    const key = getApiKey(req.user.store_id);
+
+    // 获取客户信息
+    const customer = get('SELECT * FROM customers WHERE id=?', [customer_id]);
+    if (!customer) return res.status(404).json({ error: '客户不存在' });
+
+    // 获取所有在售房源
+    const f = getDataFilter(req.user, { includeCreatedBy: false });
+    const properties = all(`SELECT * FROM properties WHERE status='available'${f.sql} ORDER BY created_at DESC LIMIT 50`, f.params);
+
+    if (properties.length === 0) {
+      return res.json({ recommendations: [], explanation: '暂无可推荐的房源' });
+    }
+
+    const prompt = `你是专业的房产中介AI助手。请根据客户需求，从以下房源中推荐最合适的5套。
+
+客户需求：
+- 预算：${customer.budget_min || '?'}-${customer.budget_max || '?'}万
+- 意向区域：${customer.preferred_areas || '不限'}
+- 需求描述：${customer.requirements || '未填写'}
+- 等级：${customer.grade}类
+
+可选房源列表：
+${properties.map((p, i) => `${i+1}. ID:${p.id} | ${p.community_name} | ${p.area}㎡ | ${p.rooms}室${p.halls}厅${p.baths}卫 | ${p.price}万 | ${p.orientation || '未知朝向'} | ${p.decoration || '未知装修'}`).join('\n')}
+
+请以JSON格式输出（只输出JSON，不要其他内容）：
+{
+  "recommendations": [
+    {
+      "property_id": "房源ID",
+      "match_score": 匹配度评分（0-100）,
+      "match_reasons": ["匹配理由1", "匹配理由2", "匹配理由3"],
+      "selling_points": ["卖点1", "卖点2"],
+      "potential_concerns": ["可能的顾虑1", "可能的顾虑2"],
+      "suggested_pitch": "推荐话术"
+    }
+  ],
+  "overall_analysis": "整体推荐分析"
+}
+
+请推荐5套最合适的房源，按匹配度从高到低排序。`;
+
+    const analysisText = await callDeepSeek(key, prompt);
+    let result;
+    try {
+      result = JSON.parse(analysisText.replace(/```json|```/g, '').trim());
+    } catch {
+      result = { recommendations: [], overall_analysis: analysisText };
+    }
+
+    // 补充完整的房源信息
+    if (result.recommendations && result.recommendations.length > 0) {
+      result.recommendations = result.recommendations.map(rec => {
+        const property = properties.find(p => p.id === rec.property_id);
+        return { ...rec, property };
+      }).filter(rec => rec.property); // 过滤掉找不到的房源
+    }
+
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '房源推荐失败' });
+  }
+});
+
+// 3. 智能回访策略建议
+app.post('/api/ai/follow-up-strategy', authMiddleware, async (req, res) => {
+  const { customer_id } = req.body;
+  if (!customer_id) return res.status(400).json({ error: '请提供客户ID' });
+
+  try {
+    const key = getApiKey(req.user.store_id);
+
+    // 获取客户信息
+    const customer = get('SELECT * FROM customers WHERE id=?', [customer_id]);
+    if (!customer) return res.status(404).json({ error: '客户不存在' });
+
+    // 获取最近的回访记录
+    const lastFollowUp = get('SELECT * FROM follow_ups WHERE customer_id=? ORDER BY created_at DESC LIMIT 1', [customer_id]);
+
+    // 获取所有回访记录
+    const allFollowUps = all('SELECT * FROM follow_ups WHERE customer_id=? ORDER BY created_at DESC', [customer_id]);
+
+    const daysSinceLastContact = lastFollowUp
+      ? Math.floor((Date.now() - new Date(lastFollowUp.created_at).getTime()) / (1000 * 60 * 60 * 24))
+      : 999;
+
+    const prompt = `你是专业的房产中介AI助手。请根据客户情况，制定详细的回访策略。
+
+客户信息：
+- 姓名：${customer.name}
+- 等级：${customer.grade}类
+- 预算：${customer.budget_min || '?'}-${customer.budget_max || '?'}万
+- 需求：${customer.requirements || '未填写'}
+
+上次回访：
+${lastFollowUp ? `- 时间：${lastFollowUp.created_at}\n- 内容：${lastFollowUp.content}\n- 距今：${daysSinceLastContact}天` : '暂无回访记录'}
+
+历史回访记录（共${allFollowUps.length}条）：
+${allFollowUps.slice(0, 5).map((f, i) => `${i+1}. [${f.created_at}] ${f.content.substring(0, 100)}`).join('\n') || '暂无'}
+
+请以JSON格式输出（只输出JSON，不要其他内容）：
+{
+  "should_follow_up_now": true或false,
+  "urgency": "紧急程度（高/中/低）",
+  "best_time": {
+    "date": "建议回访日期（YYYY-MM-DD）",
+    "time_slot": "建议时间段（如：上午10-11点）",
+    "reason": "选择这个时间的原因"
+  },
+  "communication_method": "建议沟通方式（电话/微信/上门）",
+  "conversation_topics": [
+    {
+      "topic": "话题1",
+      "purpose": "目的",
+      "key_points": ["要点1", "要点2"]
+    }
+  ],
+  "opening_script": "开场白话术",
+  "main_script": "主要沟通话术",
+  "closing_script": "结束语话术",
+  "expected_outcomes": ["预期结果1", "预期结果2"],
+  "backup_plan": "如果客户不接电话/不回复的备选方案",
+  "notes": "其他注意事项"
+}`;
+
+    const analysisText = await callDeepSeek(key, prompt);
+    let strategy;
+    try {
+      strategy = JSON.parse(analysisText.replace(/```json|```/g, '').trim());
+    } catch {
+      strategy = { notes: analysisText, should_follow_up_now: true };
+    }
+
+    res.json({ strategy, customer, last_follow_up: lastFollowUp, days_since_last_contact: daysSinceLastContact });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '回访策略生成失败' });
+  }
+});
+
+// 4. 成交概率预测
+app.post('/api/ai/deal-probability', authMiddleware, async (req, res) => {
+  const { customer_id, property_id } = req.body;
+  if (!customer_id) return res.status(400).json({ error: '请提供客户ID' });
+
+  try {
+    const key = getApiKey(req.user.store_id);
+
+    // 获取客户信息
+    const customer = get('SELECT * FROM customers WHERE id=?', [customer_id]);
+    if (!customer) return res.status(404).json({ error: '客户不存在' });
+
+    // 获取房源信息（如果提供）
+    let property = null;
+    if (property_id) {
+      property = get('SELECT * FROM properties WHERE id=?', [property_id]);
+    }
+
+    // 获取回访记录
+    const followUps = all('SELECT * FROM follow_ups WHERE customer_id=? ORDER BY created_at DESC LIMIT 10', [customer_id]);
+
+    // 获取交易记录
+    const transactions = all('SELECT * FROM transactions WHERE customer_id=?', [customer_id]);
+
+    const prompt = `你是专业的房产中介AI助手。请预测客户的成交概率。
+
+客户信息：
+- 姓名：${customer.name}
+- 类型：${customer.customer_type === 'buyer' ? '买家' : '卖家'}
+- 等级：${customer.grade}类
+- 预算：${customer.budget_min || '?'}-${customer.budget_max || '?'}万
+- 来源：${customer.source || '未知'}
+- 需求：${customer.requirements || '未填写'}
+
+${property ? `目标房源：
+- 小区：${property.community_name}
+- 面积：${property.area}㎡
+- 户型：${property.rooms}室${property.halls}厅${property.baths}卫
+- 价格：${property.price}万（底价${property.min_price || '?'}万）
+- 朝向：${property.orientation || '未知'}
+- 装修：${property.decoration || '未知'}` : '暂无特定目标房源'}
+
+回访记录（${followUps.length}条）：
+${followUps.map((f, i) => `${i+1}. [${f.created_at}] ${f.content.substring(0, 100)}`).join('\n') || '暂无'}
+
+交易进度：
+${transactions.length > 0 ? transactions.map(t => `- 阶段：${t.stage}`).join('\n') : '暂无交易记录'}
+
+请以JSON格式输出（只输出JSON，不要其他内容）：
+{
+  "overall_probability": 总体成交概率（0-100的数字）,
+  "probability_level": "概率等级（极高/高/中/低/极低）",
+  "confidence": "预测置信度（0-100）",
+  "key_factors": {
+    "positive": [
+      {"factor": "正面因素1", "impact": "影响程度（高/中/低）", "score": 加分（数字）}
+    ],
+    "negative": [
+      {"factor": "负面因素1", "impact": "影响程度（高/中/低）", "score": 减分（数字）}
+    ]
+  },
+  "timeline_prediction": {
+    "estimated_days": 预计成交天数（数字）,
+    "confidence": "时间预测置信度",
+    "explanation": "时间预测说明"
+  },
+  "recommended_actions": [
+    {
+      "action": "建议行动1",
+      "priority": "优先级（高/中/低）",
+      "expected_impact": "预期影响",
+      "implementation": "具体实施方法"
+    }
+  ],
+  "risk_assessment": {
+    "deal_falling_through_risk": "流单风险（高/中/低）",
+    "risk_factors": ["风险因素1", "风险因素2"],
+    "mitigation_strategies": ["应对策略1", "应对策略2"]
+  },
+  "price_negotiation_advice": {
+    "客户心理价位": "预估的心理价位",
+    "negotiation_space": "议价空间分析",
+    "strategy": "议价策略建议"
+  },
+  "summary": "成交概率分析总结"
+}`;
+
+    const analysisText = await callDeepSeek(key, prompt);
+    let prediction;
+    try {
+      prediction = JSON.parse(analysisText.replace(/```json|```/g, '').trim());
+    } catch {
+      prediction = { summary: analysisText, overall_probability: 50 };
+    }
+
+    res.json({ prediction, customer, property });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '成交概率预测失败' });
+  }
+});
+
 // ==================== REMINDERS ====================
 app.get('/api/reminders', authMiddleware, (req, res) => {
   const f = getDataFilter(req.user, { tableAlias: 'r', includeCreatedBy: true });
