@@ -21,7 +21,7 @@ async function initDB() {
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE,
       password TEXT NOT NULL, name TEXT NOT NULL,
-      role TEXT DEFAULT 'agent', store_id TEXT,
+      role TEXT DEFAULT 'agent', store_id TEXT, agent_id TEXT, nickname TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE TABLE IF NOT EXISTS sessions (
@@ -29,9 +29,11 @@ async function initDB() {
       expires_at TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE TABLE IF NOT EXISTS properties (
-      id TEXT PRIMARY KEY, title TEXT NOT NULL, address TEXT NOT NULL,
+      id TEXT PRIMARY KEY, title TEXT, community_name TEXT, address TEXT NOT NULL,
       area REAL, price REAL, min_price REAL,
-      unit_type TEXT, floor TEXT, total_floors TEXT,
+      unit_type TEXT, rooms TEXT, halls TEXT, baths TEXT, unit_room TEXT,
+      property_type TEXT DEFAULT '住宅', decoration TEXT, build_year TEXT, urgent INTEGER DEFAULT 0,
+      floor TEXT, total_floors TEXT,
       orientation TEXT, amenities TEXT, photo_url TEXT, description TEXT,
       owner_name TEXT, owner_phone TEXT, owner_wechat TEXT, notes TEXT,
       status TEXT DEFAULT 'available', store_id TEXT, created_by TEXT,
@@ -80,6 +82,17 @@ async function initDB() {
     "ALTER TABLE properties ADD COLUMN notes TEXT",
     "ALTER TABLE customers ADD COLUMN customer_type TEXT DEFAULT 'buyer'",
     "ALTER TABLE customers ADD COLUMN linked_property_id TEXT",
+    "ALTER TABLE users ADD COLUMN agent_id TEXT",
+    "ALTER TABLE users ADD COLUMN nickname TEXT",
+    "ALTER TABLE properties ADD COLUMN community_name TEXT",
+    "ALTER TABLE properties ADD COLUMN rooms TEXT",
+    "ALTER TABLE properties ADD COLUMN halls TEXT",
+    "ALTER TABLE properties ADD COLUMN baths TEXT",
+    "ALTER TABLE properties ADD COLUMN unit_room TEXT",
+    "ALTER TABLE properties ADD COLUMN property_type TEXT DEFAULT '住宅'",
+    "ALTER TABLE properties ADD COLUMN decoration TEXT",
+    "ALTER TABLE properties ADD COLUMN build_year TEXT",
+    "ALTER TABLE properties ADD COLUMN urgent INTEGER DEFAULT 0",
   ];
   for (const sql of migrations) {
     try { db.run(sql); } catch(e) { /* column already exists */ }

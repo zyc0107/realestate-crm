@@ -201,7 +201,7 @@ export default function Transactions() {
       </div>
 
       {showModal && (
-        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
+        <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
               <span className="modal-title">{editItem ? '✏️ 更新交易' : '💼 创建交易'}</span>

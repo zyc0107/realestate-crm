@@ -1,6 +1,6 @@
 import { apiFetch } from '../api';
 import React, { useState, useEffect } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
@@ -41,10 +41,20 @@ export default function Dashboard({ onNavigate }) {
     name: STATUS_LABELS[s.status] || s.status,
     value: s.count
   }));
+  const propertyTotal = propertyStatusData.reduce((sum, item) => sum + item.value, 0);
+  const propertyStatusWithPercent = propertyStatusData.map(item => ({
+    ...item,
+    percent: propertyTotal > 0 ? ((item.value / propertyTotal) * 100).toFixed(1) : 0
+  }));
 
   const customerSourceData = (stats.customerBySource || []).map(s => ({
     name: s.source || '未知',
     value: s.count
+  }));
+  const customerTotal = customerSourceData.reduce((sum, item) => sum + item.value, 0);
+  const customerSourceWithPercent = customerSourceData.map(item => ({
+    ...item,
+    percent: customerTotal > 0 ? ((item.value / customerTotal) * 100).toFixed(1) : 0
   }));
 
   const gradeData = (stats.customerByGrade || []).map(g => ({
@@ -131,16 +141,17 @@ export default function Dashboard({ onNavigate }) {
         {/* Property Status */}
         <div className="card">
           <div className="card-title">🏠 房源状态分布</div>
-          {propertyStatusData.length > 0 ? (
+          {propertyStatusWithPercent.length > 0 ? (
             <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie data={propertyStatusData} cx="50%" cy="50%" outerRadius={70} dataKey="value" label={({name, value}) => `${name}: ${value}`}>
-                  {propertyStatusData.map((_, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip contentStyle={{background: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8}} />
-              </PieChart>
+              <BarChart data={propertyStatusWithPercent}>
+                <XAxis dataKey="name" tick={{fill: '#94a3b8', fontSize: 12}} axisLine={false} tickLine={false} />
+                <YAxis tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} />
+                <Tooltip
+                  contentStyle={{background: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8}}
+                  formatter={(value, name, props) => [`${value} (${props.payload.percent}%)`, '数量']}
+                />
+                <Bar dataKey="value" name="数量" fill="#3b82f6" radius={[4,4,0,0]} label={{position: 'top', fill: '#94a3b8', fontSize: 11, formatter: (value, entry, index) => entry && entry.percent ? `${entry.percent}%` : ''}} />
+              </BarChart>
             </ResponsiveContainer>
           ) : <div className="empty-state"><p>暂无房源数据</p></div>}
         </div>
@@ -150,13 +161,16 @@ export default function Dashboard({ onNavigate }) {
         {/* Customer Source */}
         <div className="card">
           <div className="card-title">🎯 客户来源分析</div>
-          {customerSourceData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={customerSourceData} layout="vertical">
-                <XAxis type="number" tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" tick={{fill: '#94a3b8', fontSize: 12}} axisLine={false} tickLine={false} width={60} />
-                <Tooltip contentStyle={{background: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8}} />
-                <Bar dataKey="value" name="客户数" fill="#10b981" radius={[0,4,4,0]} />
+          {customerSourceWithPercent.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={customerSourceWithPercent}>
+                <XAxis dataKey="name" tick={{fill: '#94a3b8', fontSize: 12}} axisLine={false} tickLine={false} />
+                <YAxis tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} />
+                <Tooltip
+                  contentStyle={{background: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8}}
+                  formatter={(value, name, props) => [`${value} (${props.payload.percent}%)`, '客户数']}
+                />
+                <Bar dataKey="value" name="客户数" fill="#10b981" radius={[4,4,0,0]} label={{position: 'top', fill: '#94a3b8', fontSize: 11, formatter: (value, entry, index) => entry && entry.percent ? `${entry.percent}%` : ''}} />
               </BarChart>
             </ResponsiveContainer>
           ) : <div className="empty-state"><p>暂无数据</p></div>}

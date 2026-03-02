@@ -91,7 +91,7 @@ function getApiKey(storeId) {
 
 // ==================== AUTH ====================
 app.post('/api/auth/register', (req, res) => {
-  const { username, password, name, store_name } = req.body;
+  const { username, password, name, store_name, agent_id } = req.body;
   if (!username || !password || !name || !store_name) return res.status(400).json({ error: '请填写所有必填项' });
   if (get('SELECT id FROM users WHERE username=?', [username])) return res.status(400).json({ error: '用户名已存在' });
   let store = get('SELECT * FROM stores WHERE name=?', [store_name]);
@@ -101,12 +101,12 @@ app.post('/api/auth/register', (req, res) => {
     store = get('SELECT * FROM stores WHERE id=?', [storeId]);
   }
   const userId = uuidv4();
-  run('INSERT INTO users (id, username, password, name, store_id, role) VALUES (?, ?, ?, ?, ?, ?)',
-    [userId, username, hashPassword(password), name, store.id, 'agent']);
+  run('INSERT INTO users (id, username, password, name, store_id, role, agent_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [userId, username, hashPassword(password), name, store.id, 'agent', agent_id || '']);
   const token = generateToken();
   run('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)',
     [token, userId, new Date(Date.now() + 7*24*3600*1000).toISOString()]);
-  const user = get('SELECT id,username,name,role,store_id FROM users WHERE id=?', [userId]);
+  const user = get('SELECT id,username,name,role,store_id,agent_id FROM users WHERE id=?', [userId]);
   res.json({ token, user, store });
 });
 
@@ -164,6 +164,23 @@ app.post('/api/settings/test-key', authMiddleware, async (req, res) => {
     await callDeepSeek(key, '回复"OK"两个字');
     res.json({ success: true, message: 'API Key 验证成功！' });
   } catch (e) { res.status(400).json({ success: false, message: e.message }); }
+});
+
+app.post('/api/user/update-nickname', authMiddleware, (req, res) => {
+  const { nickname } = req.body;
+  const trimmedNickname = nickname ? nickname.trim() : '';
+
+  // Check if nickname is already taken by another user (only if not empty)
+  if (trimmedNickname) {
+    const existing = get('SELECT id FROM users WHERE nickname=? AND id!=?', [trimmedNickname, req.user.id]);
+    if (existing) {
+      return res.status(400).json({ error: '昵称已被使用，请换一个' });
+    }
+  }
+
+  // Update nickname (can be empty)
+  run('UPDATE users SET nickname=? WHERE id=?', [trimmedNickname, req.user.id]);
+  res.json({ success: true, message: '昵称更新成功' });
 });
 
 // ==================== PROPERTIES ====================
@@ -269,6 +286,11 @@ app.put('/api/customers/:id', authMiddleware, (req, res) => {
     [name||'', phone||'', wechat||'', customer_type, budget_min||null, budget_max||null,
      preferred_areas||'', requirements||'', source||'', grade, notes||'', req.params.id]);
   res.json(get('SELECT * FROM customers WHERE id=?', [req.params.id]));
+});
+
+app.delete('/api/customers/:id', authMiddleware, (req, res) => {
+  run('DELETE FROM customers WHERE id=?', [req.params.id]);
+  res.json({ success: true });
 });
 
 // ==================== FOLLOW-UPS ====================

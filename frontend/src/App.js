@@ -3,7 +3,8 @@ import Dashboard from './pages/Dashboard';
 import Properties from './pages/Properties';
 import Customers from './pages/Customers';
 import Transactions from './pages/Transactions';
-import AIFollowUp from './pages/AIFollowUp';
+import AIAnalysis from './pages/AIAnalysis';
+import Reminders from './pages/Reminders';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import { apiFetch } from './api';
@@ -11,15 +12,17 @@ import './App.css';
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: '数据看板', icon: '📊' },
+  { id: 'ai-analysis', label: 'AI智能分析', icon: '🤖' },
   { id: 'properties', label: '房源管理', icon: '🏠' },
   { id: 'customers', label: '客户管理', icon: '👥' },
   { id: 'transactions', label: '交易管理', icon: '💼' },
-  { id: 'ai-followup', label: 'AI智能回访', icon: '🤖' },
+  { id: 'reminders', label: '回访提醒', icon: '🔔' },
   { id: 'settings', label: '系统设置', icon: '⚙️' },
 ];
 
 export default function App() {
   const [user, setUser] = useState(null);
+  const [store, setStore] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activePage, setActivePage] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -29,7 +32,10 @@ export default function App() {
     const token = localStorage.getItem('crm_token');
     if (!token) { setLoading(false); return; }
     apiFetch('/api/auth/me').then(r => r?.json()).then(data => {
-      if (data?.user) setUser(data.user);
+      if (data?.user) {
+        setUser(data.user);
+        setStore(data.store);
+      }
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
@@ -56,7 +62,8 @@ export default function App() {
     properties: <Properties />,
     customers: <Customers />,
     transactions: <Transactions />,
-    'ai-followup': <AIFollowUp />,
+    'ai-analysis': <AIAnalysis />,
+    reminders: <Reminders />,
     settings: <Settings />,
   };
 
@@ -76,7 +83,7 @@ export default function App() {
               onClick={() => setActivePage(item.id)} title={item.label}>
               <span className="nav-icon">{item.icon}</span>
               {sidebarOpen && <span className="nav-label">{item.label}
-                {item.id === 'ai-followup' && pendingReminders > 0 && <span className="badge">{pendingReminders}</span>}
+                {item.id === 'reminders' && pendingReminders > 0 && <span className="badge">{pendingReminders}</span>}
               </span>}
             </button>
           ))}
@@ -101,9 +108,18 @@ export default function App() {
             {NAV_ITEMS.find(n => n.id === activePage)?.label}
             {user.role === 'admin' && <span style={{ fontSize: 12, marginLeft: 10, color: 'var(--accent-light)', fontWeight: 400 }}>（管理员·全部门店）</span>}
           </h1>
-          {pendingReminders > 0 && (
-            <div className="reminder-alert" onClick={() => setActivePage('ai-followup')}>🔔 {pendingReminders} 个待回访提醒</div>
-          )}
+          <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+            {user.role !== 'admin' && store && (
+              <div style={{ fontSize:13, color:'var(--text-muted)' }}>
+                <span style={{ fontWeight:600, color:'var(--text-primary)' }}>{store.name}</span>
+                <span style={{ margin:'0 8px' }}>·</span>
+                <span>{user.name}</span>
+              </div>
+            )}
+            {pendingReminders > 0 && (
+              <div className="reminder-alert" onClick={() => setActivePage('reminders')}>🔔 {pendingReminders} 个待回访提醒</div>
+            )}
+          </div>
         </header>
         <div className="page-content">{pages[activePage]}</div>
       </main>

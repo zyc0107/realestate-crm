@@ -54,6 +54,17 @@ export default function Customers() {
     setSelectedCustomer(data);
     setShowDetail(true);
   };
+  const deleteCustomer = async (id) => {
+    if (!window.confirm('确认删除该客户？删除后无法恢复。')) return;
+    try {
+      const res = await apiFetch(`/api/customers/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('删除失败');
+      alert('✅ 删除成功！');
+      load();
+    } catch (e) {
+      alert('❌ ' + e.message);
+    }
+  };
   const update = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   return (
@@ -79,10 +90,10 @@ export default function Customers() {
       <div className="table-container">
         <table className="table">
           <thead><tr>
-            <th>客户信息</th><th>类型</th><th>预算/价格</th><th>等级</th><th>意向区域</th><th>来源</th><th>最后回访</th><th>操作</th>
+            <th>客户信息</th><th>类型</th><th>预算/价格</th><th>关联房源</th><th>等级</th><th>意向区域</th><th>来源</th><th>最后回访</th><th>操作</th>
           </tr></thead>
           <tbody>
-            {customers.length === 0 && <tr><td colSpan={8} style={{ textAlign:'center', padding:40, color:'var(--text-muted)' }}>暂无客户</td></tr>}
+            {customers.length === 0 && <tr><td colSpan={9} style={{ textAlign:'center', padding:40, color:'var(--text-muted)' }}>暂无客户</td></tr>}
             {customers.map(c => (
               <tr key={c.id}>
                 <td>
@@ -99,8 +110,11 @@ export default function Customers() {
                 <td>
                   {c.customer_type === 'buyer'
                     ? (c.budget_min||c.budget_max) ? `${c.budget_min||'?'}~${c.budget_max||'?'}万` : '-'
-                    : c.notes ? <span style={{ fontSize:12, color:'var(--text-muted)' }}>{c.notes.substring(0,20)}</span> : '-'
+                    : '-'
                   }
+                </td>
+                <td style={{ fontSize:12, color:'var(--text-muted)' }}>
+                  {c.customer_type === 'seller' && c.notes ? c.notes.substring(0,20) : '-'}
                 </td>
                 <td><span style={{ fontWeight:700, color: GRADE_COLORS[c.grade] }}>{c.grade}类</span></td>
                 <td style={{ fontSize:13 }}>{c.preferred_areas || '-'}</td>
@@ -110,7 +124,8 @@ export default function Customers() {
                 </td>
                 <td>
                   <button className="btn btn-sm" onClick={() => openDetail(c)} style={{ marginRight:6 }}>详情</button>
-                  <button className="btn btn-sm" onClick={() => openEdit(c)}>编辑</button>
+                  <button className="btn btn-sm" onClick={() => openEdit(c)} style={{ marginRight:6 }}>编辑</button>
+                  <button className="btn btn-sm btn-danger" onClick={() => deleteCustomer(c.id)}>删除</button>
                 </td>
               </tr>
             ))}
@@ -119,7 +134,7 @@ export default function Customers() {
       </div>
 
       {showForm && (
-        <div className="modal-overlay" onClick={e => e.target===e.currentTarget && setShowForm(false)}>
+        <div className="modal-overlay">
           <div className="modal" style={{ maxWidth:560, maxHeight:'90vh', overflowY:'auto' }}>
             <div className="modal-header">
               <h2>{editItem ? '✏️ 编辑客户' : '👤 添加客户'}</h2>
@@ -193,7 +208,7 @@ export default function Customers() {
       )}
 
       {showDetail && selectedCustomer && (
-        <div className="modal-overlay" onClick={e => e.target===e.currentTarget && setShowDetail(false)}>
+        <div className="modal-overlay">
           <div className="modal" style={{ maxWidth:700, maxHeight:'90vh', overflowY:'auto' }}>
             <div className="modal-header">
               <h2>👤 客户详情 - {selectedCustomer.name}</h2>

@@ -10,7 +10,7 @@ export default function Properties() {
   const [editItem, setEditItem] = useState(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const empty = { title:'',address:'',area:'',price:'',min_price:'',unit_type:'',floor:'',total_floors:'',
+  const empty = { community_name:'',address:'',area:'',price:'',min_price:'',rooms:'',halls:'',baths:'',unit_room:'',property_type:'住宅',decoration:'',build_year:'',urgent:false,floor:'',total_floors:'',
     orientation:'',amenities:'',photo_url:'',description:'',status:'available',
     owner_name:'',owner_phone:'',owner_wechat:'',notes:'' };
   const [form, setForm] = useState(empty);
@@ -26,8 +26,8 @@ export default function Properties() {
   };
 
   const save = async () => {
-    if (!form.title || !form.address) {
-      alert('请填写房源标题和地址');
+    if (!form.community_name || !form.address) {
+      alert('请填写小区名称和详细地址');
       return;
     }
     try {
@@ -57,7 +57,7 @@ export default function Properties() {
   return (
     <div>
       <div style={{ display:'flex', gap:12, marginBottom:20, flexWrap:'wrap' }}>
-        <input className="search-input" placeholder="🔍 搜索房源标题、地址..." value={search}
+        <input className="search-input" placeholder="🔍 搜索小区名称、地址..." value={search}
           onChange={e => setSearch(e.target.value)} style={{ flex:1, minWidth:200 }} />
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
           style={{ padding:'8px 12px', borderRadius:8, border:'1px solid var(--border)', background:'var(--bg-card)', color:'var(--text-primary)' }}>
@@ -79,9 +79,12 @@ export default function Properties() {
             {properties.map(p => (
               <tr key={p.id}>
                 <td>
-                  <div style={{ fontWeight:600 }}>{p.title}</div>
+                  <div style={{ fontWeight:600 }}>{p.community_name || p.title}</div>
                   <div style={{ fontSize:12, color:'var(--text-muted)' }}>{p.address}</div>
-                  <div style={{ fontSize:12, color:'var(--text-muted)' }}>{p.area}㎡ {p.unit_type} {p.floor && `${p.floor}/${p.total_floors}层`}</div>
+                  <div style={{ fontSize:12, color:'var(--text-muted)' }}>
+                    {p.area}㎡ {p.rooms && `${p.rooms}室${p.halls}厅${p.baths}卫`} {p.floor && `${p.floor}/${p.total_floors}层`}
+                    {p.urgent && <span style={{ marginLeft:6, color:'#ef4444', fontWeight:600 }}>🔥急售</span>}
+                  </div>
                 </td>
                 <td>
                   <div style={{ fontWeight:600, color:'var(--accent)' }}>¥{p.price}万</div>
@@ -107,7 +110,7 @@ export default function Properties() {
       </div>
 
       {showForm && (
-        <div className="modal-overlay" onClick={e => e.target===e.currentTarget && setShowForm(false)}>
+        <div className="modal-overlay">
           <div className="modal" style={{ maxWidth:640, maxHeight:'90vh', overflowY:'auto' }}>
             <div className="modal-header">
               <h2>{editItem ? '✏️ 编辑房源' : '🏠 录入新房源'}</h2>
@@ -115,12 +118,38 @@ export default function Properties() {
             </div>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
               <div className="form-group" style={{ gridColumn:'1/-1' }}>
-                <label>房源标题 *</label>
-                <input value={form.title} onChange={e=>update('title',e.target.value)} placeholder="例：碧桂园·天璟3室2厅精装修" />
+                <label>小区名称 *</label>
+                <input value={form.community_name} onChange={e=>update('community_name',e.target.value)} placeholder="例：碧桂园·天璟" />
               </div>
               <div className="form-group" style={{ gridColumn:'1/-1' }}>
                 <label>详细地址 *</label>
-                <input value={form.address} onChange={e=>update('address',e.target.value)} placeholder="小区名称、楼栋号" />
+                <input value={form.address} onChange={e=>update('address',e.target.value)} placeholder="楼栋号、单元号、房号" />
+              </div>
+              <div className="form-group">
+                <label>单元/房号</label>
+                <input value={form.unit_room} onChange={e=>update('unit_room',e.target.value)} placeholder="例：3单元1201" />
+              </div>
+              <div className="form-group">
+                <label>房源类型</label>
+                <select value={form.property_type} onChange={e=>update('property_type',e.target.value)}>
+                  {['住宅','商铺','写字楼','别墅','公寓'].map(v=><option key={v}>{v}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>室</label>
+                <input type="number" value={form.rooms} onChange={e=>update('rooms',e.target.value)} placeholder="3" />
+              </div>
+              <div className="form-group">
+                <label>厅</label>
+                <input type="number" value={form.halls} onChange={e=>update('halls',e.target.value)} placeholder="2" />
+              </div>
+              <div className="form-group">
+                <label>卫</label>
+                <input type="number" value={form.baths} onChange={e=>update('baths',e.target.value)} placeholder="2" />
+              </div>
+              <div className="form-group">
+                <label>建筑面积（㎡）</label>
+                <input type="number" value={form.area} onChange={e=>update('area',e.target.value)} placeholder="89" />
               </div>
               <div className="form-group">
                 <label>挂牌价格（万元）</label>
@@ -131,15 +160,15 @@ export default function Properties() {
                 <input type="number" value={form.min_price} onChange={e=>update('min_price',e.target.value)} placeholder="90" />
               </div>
               <div className="form-group">
-                <label>建筑面积（㎡）</label>
-                <input type="number" value={form.area} onChange={e=>update('area',e.target.value)} placeholder="89" />
+                <label>装修状态</label>
+                <select value={form.decoration} onChange={e=>update('decoration',e.target.value)}>
+                  <option value="">请选择</option>
+                  {['毛坯','简装','精装','豪装'].map(v=><option key={v}>{v}</option>)}
+                </select>
               </div>
               <div className="form-group">
-                <label>户型</label>
-                <select value={form.unit_type} onChange={e=>update('unit_type',e.target.value)}>
-                  <option value="">请选择</option>
-                  {['1室1厅','2室1厅','2室2厅','3室1厅','3室2厅','4室2厅','5室以上'].map(v=><option key={v}>{v}</option>)}
-                </select>
+                <label>建成年份</label>
+                <input type="number" value={form.build_year} onChange={e=>update('build_year',e.target.value)} placeholder="2018" />
               </div>
               <div className="form-group">
                 <label>所在楼层</label>
@@ -163,6 +192,12 @@ export default function Properties() {
                   <option value="suspended">暂停</option>
                   <option value="sold">已售</option>
                 </select>
+              </div>
+              <div className="form-group" style={{ gridColumn:'1/-1' }}>
+                <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
+                  <input type="checkbox" checked={form.urgent} onChange={e=>update('urgent',e.target.checked)} />
+                  <span>🔥 急售/急租</span>
+                </label>
               </div>
               <div className="form-group" style={{ gridColumn:'1/-1' }}>
                 <label>配套设施</label>

@@ -4,37 +4,81 @@ import React, { useState, useEffect } from 'react';
 export default function Settings() {
   const [form, setForm] = useState({
     deepseek_api_key: '',
-    company_name: '',
-    agent_name: '',
+    nickname: '',
   });
+  const [userInfo, setUserInfo] = useState(null);
   const [savedInfo, setSavedInfo] = useState({});
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
+  const [nicknameError, setNicknameError] = useState('');
 
   useEffect(() => {
+    // Fetch user info
+    apiFetch('/api/auth/me').then(r => r.json()).then(data => {
+      setUserInfo(data);
+      setForm(f => ({ ...f, nickname: data.user.nickname || '' }));
+    });
+    // Fetch settings
     apiFetch('/api/settings').then(r => r.json()).then(data => {
       setSavedInfo(data);
-      setForm(f => ({
-        ...f,
-        company_name: data.company_name || '',
-        agent_name: data.agent_name || '',
-      }));
     });
   }, []);
 
   const handleSave = async () => {
-    setSaving(true); setSaveMsg('');
-    const body = { company_name: form.company_name, agent_name: form.agent_name };
-    if (form.deepseek_api_key) body.deepseek_api_key = form.deepseek_api_key;
-    await apiFetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    setSaving(true); setSaveMsg(''); setNicknameError('');
+    let hasChanges = false;
+
+    // Save API key if provided
+    if (form.deepseek_api_key) {
+      hasChanges = true;
+      await apiFetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deepseek_api_key: form.deepseek_api_key })
+      });
+      setForm(f => ({ ...f, deepseek_api_key: '' }));
+      apiFetch('/api/settings').then(r => r.json()).then(setSavedInfo);
+    }
+
+    // Save nickname if changed
+    const currentNickname = userInfo?.user?.nickname || '';
+    const newNickname = form.nickname || '';
+    if (newNickname !== currentNickname) {
+      hasChanges = true;
+      try {
+        const res = await apiFetch('/api/user/update-nickname', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nickname: newNickname })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setNicknameError(data.error || '保存失败');
+          setSaving(false);
+          return;
+        }
+        // Refresh user info
+        const meRes = await apiFetch('/api/auth/me');
+        const meData = await meRes.json();
+        setUserInfo(meData);
+        setForm(f => ({ ...f, nickname: meData.user.nickname || '' }));
+      } catch (e) {
+        setNicknameError('保存失败，请重试：' + e.message);
+        setSaving(false);
+        return;
+      }
+    }
+
     setSaving(false);
-    setSaveMsg('✅ 保存成功！');
-    // Refresh saved info
-    apiFetch('/api/settings').then(r => r.json()).then(setSavedInfo);
-    setForm(f => ({ ...f, deepseek_api_key: '' }));
-    setTimeout(() => setSaveMsg(''), 3000);
+    if (hasChanges) {
+      setSaveMsg('✅ 保存成功！');
+      setTimeout(() => setSaveMsg(''), 3000);
+    } else {
+      setSaveMsg('没有需要保存的更改');
+      setTimeout(() => setSaveMsg(''), 2000);
+    }
   };
 
   const handleTest = async () => {
@@ -109,24 +153,46 @@ export default function Settings() {
       {/* 基本信息 */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-title">🏢 基本信息</div>
-        <div className="form-grid">
-          <div className="form-group">
-            <label>公司/门店名称</label>
-            <input
-              value={form.company_name}
-              onChange={e => setForm(f => ({ ...f, company_name: e.target.value }))}
-              placeholder="例：链家天河区分部"
-            />
+        {userInfo ? (
+          <div className="form-grid">
+            <div className="form-group">
+              <label>门店名称</label>
+              <input
+                value={userInfo.store?.name || '未分配门店'}
+                readOnly
+                style={{ background: 'var(--bg-hover)', cursor: 'not-allowed', color: 'var(--text-muted)' }}
+              />
+            </div>
+            <div className="form-group">
+              <label>经纪人姓名</label>
+              <input
+                value={userInfo.user.name}
+                readOnly
+                style={{ background: 'var(--bg-hover)', cursor: 'not-allowed', color: 'var(--text-muted)' }}
+              />
+            </div>
+            <div className="form-group">
+              <label>经纪人编号</label>
+              <input
+                value={userInfo.user.agent_id || '未设置'}
+                readOnly
+                style={{ background: 'var(--bg-hover)', cursor: 'not-allowed', color: 'var(--text-muted)' }}
+              />
+            </div>
+            <div className="form-group">
+              <label>昵称</label>
+              <input
+                value={form.nickname}
+                onChange={e => { setForm(f => ({ ...f, nickname: e.target.value })); setNicknameError(''); }}
+                placeholder="设置一个昵称"
+              />
+              {nicknameError && <span style={{ fontSize: 12, color: '#f87171', marginTop: 4 }}>{nicknameError}</span>}
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>昵称用于在系统中显示，可随时修改</span>
+            </div>
           </div>
-          <div className="form-group">
-            <label>经纪人姓名</label>
-            <input
-              value={form.agent_name}
-              onChange={e => setForm(f => ({ ...f, agent_name: e.target.value }))}
-              placeholder="你的名字"
-            />
-          </div>
-        </div>
+        ) : (
+          <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>加载中...</div>
+        )}
       </div>
 
       {/* 保存按钮 */}
