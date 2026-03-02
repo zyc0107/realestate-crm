@@ -4,6 +4,7 @@ import Properties from './pages/Properties';
 import Customers from './pages/Customers';
 import Transactions from './pages/Transactions';
 import AIAnalysis from './pages/AIAnalysis';
+import AIAssistant from './pages/AIAssistant';
 import Reminders from './pages/Reminders';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
@@ -12,7 +13,8 @@ import './App.css';
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: '数据看板', icon: '📊' },
-  { id: 'ai-analysis', label: 'AI智能分析', icon: '🤖' },
+  { id: 'ai-assistant', label: 'AI智能助手', icon: '🤖' },
+  { id: 'ai-analysis', label: 'AI智能分析', icon: '🧠' },
   { id: 'properties', label: '房源管理', icon: '🏠' },
   { id: 'customers', label: '客户管理', icon: '👥' },
   { id: 'transactions', label: '交易管理', icon: '💼' },
@@ -119,10 +121,11 @@ export default function App() {
 
   const pages = {
     dashboard: <Dashboard onNavigate={setActivePage} />,
+    'ai-assistant': <AIAssistant />,
+    'ai-analysis': <AIAnalysis />,
     properties: <Properties user={user} />,
     customers: <Customers user={user} />,
     transactions: <Transactions />,
-    'ai-analysis': <AIAnalysis />,
     reminders: <Reminders />,
     settings: <Settings />,
   };
