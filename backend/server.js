@@ -284,6 +284,42 @@ app.delete('/api/properties/:id', authMiddleware, (req, res) => {
   res.json({ success: true });
 });
 
+// 批量删除房源
+app.post('/api/properties/batch-delete', authMiddleware, (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: '请提供要删除的房源ID列表' });
+  }
+
+  let successCount = 0;
+  let errorCount = 0;
+
+  ids.forEach(id => {
+    try {
+      const existing = get('SELECT * FROM properties WHERE id=?', [id]);
+      if (!existing) {
+        errorCount++;
+        return;
+      }
+      if (req.user.role !== 'admin' && existing.created_by !== req.user.id && existing.created_by !== null) {
+        errorCount++;
+        return;
+      }
+      run('DELETE FROM properties WHERE id=?', [id]);
+      successCount++;
+    } catch (e) {
+      errorCount++;
+    }
+  });
+
+  res.json({
+    success: true,
+    successCount,
+    errorCount,
+    message: `成功删除 ${successCount} 条，失败 ${errorCount} 条`
+  });
+});
+
 // ==================== CUSTOMERS ====================
 app.get('/api/customers', authMiddleware, (req, res) => {
   const { grade, search, customer_type } = req.query;
@@ -337,9 +373,27 @@ app.get('/api/customers/:id', authMiddleware, (req, res) => {
 });
 
 app.post('/api/customers', authMiddleware, (req, res) => {
-  const id = uuidv4();
   const { name, phone, wechat, customer_type = 'buyer', budget_min, budget_max,
     preferred_areas, requirements, source, grade = 'C', notes, linked_property_id } = req.body;
+
+  // 验证必填字段
+  if (!name) {
+    return res.status(400).json({ error: '请填写客户姓名' });
+  }
+
+  // 检查手机号是否重复
+  if (phone) {
+    const existing = get('SELECT id, name FROM customers WHERE phone=? AND store_id=?', [phone, req.user.store_id]);
+    if (existing) {
+      return res.status(400).json({
+        error: '手机号已存在',
+        duplicate: true,
+        existingCustomer: existing
+      });
+    }
+  }
+
+  const id = uuidv4();
   run(`INSERT INTO customers (id,name,phone,wechat,customer_type,budget_min,budget_max,
     preferred_areas,requirements,source,grade,notes,linked_property_id,store_id,created_by)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -375,6 +429,44 @@ app.delete('/api/customers/:id', authMiddleware, (req, res) => {
   run('DELETE FROM follow_ups WHERE customer_id=?', [req.params.id]);
   run('DELETE FROM reminders WHERE customer_id=?', [req.params.id]);
   res.json({ success: true });
+});
+
+// 批量删除客户
+app.post('/api/customers/batch-delete', authMiddleware, (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: '请提供要删除的客户ID列表' });
+  }
+
+  let successCount = 0;
+  let errorCount = 0;
+
+  ids.forEach(id => {
+    try {
+      const existing = get('SELECT * FROM customers WHERE id=?', [id]);
+      if (!existing) {
+        errorCount++;
+        return;
+      }
+      if (req.user.role !== 'admin' && existing.created_by !== req.user.id && existing.created_by !== null) {
+        errorCount++;
+        return;
+      }
+      run('DELETE FROM customers WHERE id=?', [id]);
+      run('DELETE FROM follow_ups WHERE customer_id=?', [id]);
+      run('DELETE FROM reminders WHERE customer_id=?', [id]);
+      successCount++;
+    } catch (e) {
+      errorCount++;
+    }
+  });
+
+  res.json({
+    success: true,
+    successCount,
+    errorCount,
+    message: `成功删除 ${successCount} 条，失败 ${errorCount} 条`
+  });
 });
 
 // ==================== FOLLOW-UPS ====================
@@ -629,6 +721,170 @@ app.get('/api/export', authMiddleware, (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent('房产CRM数据_' + date + '.csv')}`);
     res.send('\uFEFF' + content);
+  }
+});
+
+// ==================== IMPORT ====================
+// 下载导入模板
+app.get('/api/import/template/:type', authMiddleware, (req, res) => {
+  const { type } = req.params;
+  const wb = XLSX.utils.book_new();
+
+  if (type === 'properties') {
+    const template = [
+      {
+        '小区名称': '示例小区',
+        '详细地址': '示例路123号',
+        '面积(㎡)': '100',
+        '挂牌价(万)': '500',
+        '最低价(万)': '480',
+        '户型': '3室2厅',
+        '室': '3',
+        '厅': '2',
+        '卫': '2',
+        '楼层': '10',
+        '总楼层': '30',
+        '朝向': '南',
+        '配套设施': '地铁,学校',
+        '状态': 'available',
+        '业主姓名': '张三',
+        '业主电话': '13800138000',
+        '业主微信': 'zhangsan',
+        '备注': '急售'
+      }
+    ];
+    const ws = XLSX.utils.json_to_sheet(template);
+    XLSX.utils.book_append_sheet(wb, ws, '房源导入模板');
+  } else if (type === 'customers') {
+    const template = [
+      {
+        '客户姓名': '李四',
+        '手机号': '13900139000',
+        '微信': 'lisi',
+        '客户类型': 'buyer',
+        '预算最低(万)': '300',
+        '预算最高(万)': '500',
+        '意向区域': '浦东新区',
+        '需求描述': '3室2厅,靠近地铁',
+        '来源': '朋友介绍',
+        '等级': 'A',
+        '备注': '意向强烈'
+      }
+    ];
+    const ws = XLSX.utils.json_to_sheet(template);
+    XLSX.utils.book_append_sheet(wb, ws, '客户导入模板');
+  } else {
+    return res.status(400).json({ error: '无效的模板类型' });
+  }
+
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(type === 'properties' ? '房源导入模板.xlsx' : '客户导入模板.xlsx')}`);
+  res.send(buffer);
+});
+
+app.post('/api/import/properties', authMiddleware, (req, res) => {
+  try {
+    const { data } = req.body;
+    if (!Array.isArray(data) || data.length === 0) {
+      return res.status(400).json({ error: '请提供有效的数据' });
+    }
+
+    let successCount = 0;
+    let errorCount = 0;
+    const errors = [];
+
+    data.forEach((row, index) => {
+      try {
+        // 验证必填字段
+        if (!row.address) {
+          errors.push(`第${index + 1}行：缺少地址`);
+          errorCount++;
+          return;
+        }
+
+        const id = uuidv4();
+        run(`INSERT INTO properties (id,title,community_name,address,area,price,min_price,unit_type,rooms,halls,baths,
+          floor,total_floors,orientation,amenities,description,status,owner_name,owner_phone,owner_wechat,notes,store_id,created_by)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [id, row.title||'', row.community_name||'', row.address, row.area||null, row.price||null, row.min_price||null,
+           row.unit_type||'', row.rooms||'', row.halls||'', row.baths||'',
+           row.floor||'', row.total_floors||'', row.orientation||'', row.amenities||'', row.description||'',
+           row.status||'available', row.owner_name||'', row.owner_phone||'', row.owner_wechat||'', row.notes||'',
+           req.user.store_id, req.user.id]);
+        successCount++;
+      } catch (e) {
+        errors.push(`第${index + 1}行：${e.message}`);
+        errorCount++;
+      }
+    });
+
+    res.json({
+      success: true,
+      successCount,
+      errorCount,
+      errors: errors.slice(0, 10), // 只返回前10个错误
+      message: `成功导入 ${successCount} 条，失败 ${errorCount} 条`
+    });
+  } catch (e) {
+    res.status(500).json({ error: '导入失败：' + e.message });
+  }
+});
+
+app.post('/api/import/customers', authMiddleware, (req, res) => {
+  try {
+    const { data } = req.body;
+    if (!Array.isArray(data) || data.length === 0) {
+      return res.status(400).json({ error: '请提供有效的数据' });
+    }
+
+    let successCount = 0;
+    let errorCount = 0;
+    const errors = [];
+    const duplicates = [];
+
+    data.forEach((row, index) => {
+      try {
+        // 验证必填字段
+        if (!row.name) {
+          errors.push(`第${index + 1}行：缺少客户姓名`);
+          errorCount++;
+          return;
+        }
+
+        // 检查手机号是否重复
+        if (row.phone) {
+          const existing = get('SELECT id, name FROM customers WHERE phone=? AND store_id=?', [row.phone, req.user.store_id]);
+          if (existing) {
+            duplicates.push(`第${index + 1}行：手机号 ${row.phone} 已存在（客户：${existing.name}）`);
+            errorCount++;
+            return;
+          }
+        }
+
+        const id = uuidv4();
+        run(`INSERT INTO customers (id,name,phone,wechat,customer_type,budget_min,budget_max,
+          preferred_areas,requirements,source,grade,notes,store_id,created_by)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [id, row.name, row.phone||'', row.wechat||'', row.customer_type||'buyer',
+           row.budget_min||null, row.budget_max||null, row.preferred_areas||'', row.requirements||'',
+           row.source||'', row.grade||'C', row.notes||'', req.user.store_id, req.user.id]);
+        successCount++;
+      } catch (e) {
+        errors.push(`第${index + 1}行：${e.message}`);
+        errorCount++;
+      }
+    });
+
+    res.json({
+      success: true,
+      successCount,
+      errorCount,
+      errors: [...duplicates, ...errors].slice(0, 10),
+      message: `成功导入 ${successCount} 条，失败 ${errorCount} 条${duplicates.length > 0 ? `（其中 ${duplicates.length} 条重复）` : ''}`
+    });
+  } catch (e) {
+    res.status(500).json({ error: '导入失败：' + e.message });
   }
 });
 

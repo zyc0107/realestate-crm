@@ -13,6 +13,8 @@ export default function Customers() {
   const [showDetail, setShowDetail] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [editItem, setEditItem] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [showImport, setShowImport] = useState(false);
   const empty = { name:'',phone:'',wechat:'',customer_type:'buyer',budget_min:'',budget_max:'',
     preferred_areas:'',requirements:'',source:'',grade:'C',notes:'' };
   const [form, setForm] = useState(empty);
@@ -67,6 +69,90 @@ export default function Customers() {
   };
   const update = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds(prev => prev.length === customers.length ? [] : customers.map(c => c.id));
+  };
+
+  const batchDelete = async () => {
+    if (selectedIds.length === 0) {
+      alert('请先选择要删除的客户');
+      return;
+    }
+    if (!window.confirm(`确认删除选中的 ${selectedIds.length} 条客户？删除后无法恢复。`)) return;
+
+    const res = await apiFetch('/api/customers/batch-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids: selectedIds })
+    });
+    const result = await res.json();
+    alert(result.message);
+    setSelectedIds([]);
+    load();
+  };
+
+  const downloadTemplate = async () => {
+    const res = await apiFetch('/api/import/template/customers');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '客户导入模板.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const XLSX = await import('xlsx');
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const data = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet);
+
+        const importData = rows.map(row => ({
+          name: row['客户姓名'] || '',
+          phone: row['手机号'] || '',
+          wechat: row['微信'] || '',
+          customer_type: row['客户类型'] || 'buyer',
+          budget_min: row['预算最低(万)'] || '',
+          budget_max: row['预算最高(万)'] || '',
+          preferred_areas: row['意向区域'] || '',
+          requirements: row['需求描述'] || '',
+          source: row['来源'] || '',
+          grade: row['等级'] || 'C',
+          notes: row['备注'] || ''
+        }));
+
+        const res = await apiFetch('/api/import/customers', {
+          method: 'POST',
+          body: JSON.stringify({ data: importData })
+        });
+        const result = await res.json();
+
+        let msg = result.message;
+        if (result.errors && result.errors.length > 0) {
+          msg += '\n\n错误详情：\n' + result.errors.join('\n');
+        }
+        alert(msg);
+        setShowImport(false);
+        load();
+      } catch (err) {
+        alert('导入失败：' + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
+  };
+
   return (
     <div>
       {/* Tabs */}
@@ -81,21 +167,33 @@ export default function Customers() {
         ))}
       </div>
 
-      <div style={{ display:'flex', gap:12, marginBottom:20 }}>
+      <div style={{ display:'flex', gap:12, marginBottom:20, flexWrap:'wrap' }}>
         <input className="search-input" placeholder="🔍 搜索姓名、电话..." value={search}
-          onChange={e => setSearch(e.target.value)} style={{ flex:1 }} />
+          onChange={e => setSearch(e.target.value)} style={{ flex:1, minWidth:200 }} />
         <button className="btn btn-primary" onClick={() => { setEditItem(null); setForm(empty); setShowForm(true); }}>+ 添加客户</button>
+        <button className="btn btn-secondary" onClick={() => setShowImport(true)}>📥 批量导入</button>
+        {selectedIds.length > 0 && (
+          <button className="btn btn-danger" onClick={batchDelete}>🗑️ 批量删除 ({selectedIds.length})</button>
+        )}
       </div>
 
       <div className="table-container">
         <table className="table">
           <thead><tr>
+            <th style={{ width:40 }}>
+              <input type="checkbox" checked={selectedIds.length === customers.length && customers.length > 0}
+                onChange={toggleSelectAll} />
+            </th>
             <th>客户信息</th><th>类型</th><th>预算/价格</th><th>关联房源</th><th>等级</th><th>意向区域</th><th>来源</th><th>最后回访</th><th>操作</th>
           </tr></thead>
           <tbody>
-            {customers.length === 0 && <tr><td colSpan={9} style={{ textAlign:'center', padding:40, color:'var(--text-muted)' }}>暂无客户</td></tr>}
+            {customers.length === 0 && <tr><td colSpan={10} style={{ textAlign:'center', padding:40, color:'var(--text-muted)' }}>暂无客户</td></tr>}
             {customers.map(c => (
               <tr key={c.id}>
+                <td>
+                  <input type="checkbox" checked={selectedIds.includes(c.id)}
+                    onChange={() => toggleSelect(c.id)} />
+                </td>
                 <td>
                   <div style={{ fontWeight:600 }}>{c.name}</div>
                   {c.phone && <div style={{ fontSize:12, color:'var(--text-muted)' }}>📞 {c.phone}</div>}
@@ -316,6 +414,39 @@ export default function Customers() {
 
             <div style={{ marginTop:20, textAlign:'right' }}>
               <button className="btn btn-primary" onClick={() => setShowDetail(false)}>关闭</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showImport && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth:500 }}>
+            <div className="modal-header">
+              <h2>📥 批量导入客户</h2>
+              <button onClick={() => setShowImport(false)} style={{ background:'none',border:'none',fontSize:20,cursor:'pointer',color:'var(--text-muted)' }}>✕</button>
+            </div>
+            <div style={{ padding:'20px 0' }}>
+              <div style={{ marginBottom:20, padding:16, background:'#f0f9ff', borderRadius:8, border:'1px solid #bae6fd' }}>
+                <div style={{ fontWeight:600, marginBottom:8, color:'#0369a1' }}>📋 导入步骤：</div>
+                <ol style={{ margin:0, paddingLeft:20, color:'#0c4a6e', lineHeight:1.8 }}>
+                  <li>下载导入模板</li>
+                  <li>按照模板格式填写客户数据</li>
+                  <li>上传填好的Excel文件</li>
+                </ol>
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                <button className="btn btn-secondary" onClick={downloadTemplate} style={{ width:'100%' }}>
+                  📄 下载导入模板
+                </button>
+                <label className="btn btn-primary" style={{ width:'100%', textAlign:'center', cursor:'pointer' }}>
+                  📤 选择Excel文件上传
+                  <input type="file" accept=".xlsx,.xls" onChange={handleImport} style={{ display:'none' }} />
+                </label>
+              </div>
+              <div style={{ marginTop:16, fontSize:12, color:'var(--text-muted)' }}>
+                💡 提示：系统会自动检测手机号重复，重复的客户将不会导入
+              </div>
             </div>
           </div>
         </div>

@@ -10,6 +10,8 @@ export default function Properties() {
   const [editItem, setEditItem] = useState(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [showImport, setShowImport] = useState(false);
   const empty = { community_name:'',address:'',area:'',price:'',min_price:'',rooms:'',halls:'',baths:'',unit_room:'',property_type:'住宅',decoration:'',build_year:'',urgent:false,floor:'',total_floors:'',
     orientation:'',amenities:'',photo_url:'',description:'',status:'available',
     owner_name:'',owner_phone:'',owner_wechat:'',notes:'' };
@@ -54,6 +56,97 @@ export default function Properties() {
   const openEdit = (p) => { setEditItem(p); setForm(p); setShowForm(true); };
   const update = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds(prev => prev.length === properties.length ? [] : properties.map(p => p.id));
+  };
+
+  const batchDelete = async () => {
+    if (selectedIds.length === 0) {
+      alert('请先选择要删除的房源');
+      return;
+    }
+    if (!window.confirm(`确认删除选中的 ${selectedIds.length} 条房源？`)) return;
+
+    const res = await apiFetch('/api/properties/batch-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids: selectedIds })
+    });
+    const result = await res.json();
+    alert(result.message);
+    setSelectedIds([]);
+    load();
+  };
+
+  const downloadTemplate = async () => {
+    const res = await apiFetch('/api/import/template/properties');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '房源导入模板.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const XLSX = await import('xlsx');
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const data = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet);
+
+        const importData = rows.map(row => ({
+          community_name: row['小区名称'] || '',
+          address: row['详细地址'] || '',
+          area: row['面积(㎡)'] || '',
+          price: row['挂牌价(万)'] || '',
+          min_price: row['最低价(万)'] || '',
+          unit_type: row['户型'] || '',
+          rooms: row['室'] || '',
+          halls: row['厅'] || '',
+          baths: row['卫'] || '',
+          floor: row['楼层'] || '',
+          total_floors: row['总楼层'] || '',
+          orientation: row['朝向'] || '',
+          amenities: row['配套设施'] || '',
+          status: row['状态'] || 'available',
+          owner_name: row['业主姓名'] || '',
+          owner_phone: row['业主电话'] || '',
+          owner_wechat: row['业主微信'] || '',
+          notes: row['备注'] || ''
+        }));
+
+        const res = await apiFetch('/api/import/properties', {
+          method: 'POST',
+          body: JSON.stringify({ data: importData })
+        });
+        const result = await res.json();
+
+        let msg = result.message;
+        if (result.errors && result.errors.length > 0) {
+          msg += '\n\n错误详情：\n' + result.errors.join('\n');
+        }
+        alert(msg);
+        setShowImport(false);
+        load();
+      } catch (err) {
+        alert('导入失败：' + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
+  };
+
   return (
     <div>
       <div style={{ display:'flex', gap:12, marginBottom:20, flexWrap:'wrap' }}>
@@ -67,17 +160,29 @@ export default function Properties() {
           <option value="suspended">暂停</option>
         </select>
         <button className="btn btn-primary" onClick={() => { setEditItem(null); setForm(empty); setShowForm(true); }}>+ 录入房源</button>
+        <button className="btn btn-secondary" onClick={() => setShowImport(true)}>📥 批量导入</button>
+        {selectedIds.length > 0 && (
+          <button className="btn btn-danger" onClick={batchDelete}>🗑️ 批量删除 ({selectedIds.length})</button>
+        )}
       </div>
 
       <div className="table-container">
         <table className="table">
           <thead><tr>
+            <th style={{ width:40 }}>
+              <input type="checkbox" checked={selectedIds.length === properties.length && properties.length > 0}
+                onChange={toggleSelectAll} />
+            </th>
             <th>房源信息</th><th>价格</th><th>业主信息</th><th>状态</th><th>操作</th>
           </tr></thead>
           <tbody>
-            {properties.length === 0 && <tr><td colSpan={5} style={{ textAlign:'center', padding:40, color:'var(--text-muted)' }}>暂无房源，点击「录入房源」添加</td></tr>}
+            {properties.length === 0 && <tr><td colSpan={6} style={{ textAlign:'center', padding:40, color:'var(--text-muted)' }}>暂无房源，点击「录入房源」添加</td></tr>}
             {properties.map(p => (
               <tr key={p.id}>
+                <td>
+                  <input type="checkbox" checked={selectedIds.includes(p.id)}
+                    onChange={() => toggleSelect(p.id)} />
+                </td>
                 <td>
                   <div style={{ fontWeight:600 }}>{p.community_name || p.title}</div>
                   <div style={{ fontSize:12, color:'var(--text-muted)' }}>{p.address}</div>
@@ -230,6 +335,39 @@ export default function Properties() {
             <div style={{ display:'flex', gap:10, justifyContent:'flex-end', marginTop:20 }}>
               <button className="btn" onClick={() => setShowForm(false)}>取消</button>
               <button className="btn btn-primary" onClick={save}>💾 保存</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showImport && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth:500 }}>
+            <div className="modal-header">
+              <h2>📥 批量导入房源</h2>
+              <button onClick={() => setShowImport(false)} style={{ background:'none',border:'none',fontSize:20,cursor:'pointer',color:'var(--text-muted)' }}>✕</button>
+            </div>
+            <div style={{ padding:'20px 0' }}>
+              <div style={{ marginBottom:20, padding:16, background:'#f0f9ff', borderRadius:8, border:'1px solid #bae6fd' }}>
+                <div style={{ fontWeight:600, marginBottom:8, color:'#0369a1' }}>📋 导入步骤：</div>
+                <ol style={{ margin:0, paddingLeft:20, color:'#0c4a6e', lineHeight:1.8 }}>
+                  <li>下载导入模板</li>
+                  <li>按照模板格式填写房源数据</li>
+                  <li>上传填好的Excel文件</li>
+                </ol>
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                <button className="btn btn-secondary" onClick={downloadTemplate} style={{ width:'100%' }}>
+                  📄 下载导入模板
+                </button>
+                <label className="btn btn-primary" style={{ width:'100%', textAlign:'center', cursor:'pointer' }}>
+                  📤 选择Excel文件上传
+                  <input type="file" accept=".xlsx,.xls" onChange={handleImport} style={{ display:'none' }} />
+                </label>
+              </div>
+              <div style={{ marginTop:16, fontSize:12, color:'var(--text-muted)' }}>
+                💡 提示：请确保Excel文件格式正确，必填字段为「详细地址」
+              </div>
             </div>
           </div>
         </div>
