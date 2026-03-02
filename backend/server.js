@@ -34,6 +34,36 @@ function getStoreFilter(user) {
   return { sql: ' AND store_id=?', params: [user.store_id] };
 }
 
+function getDataFilter(user, options = {}) {
+  const { tableAlias = '', includeCreatedBy = true } = options;
+  const prefix = tableAlias ? `${tableAlias}.` : '';
+
+  // 管理员: 无限制
+  if (user.role === 'admin') {
+    return { sql: '', params: [] };
+  }
+
+  // 普通中介: 只能看自己创建的数据
+  if (includeCreatedBy) {
+    return {
+      sql: ` AND ${prefix}store_id=? AND (${prefix}created_by=? OR ${prefix}created_by IS NULL)`,
+      params: [user.store_id, user.id]
+    };
+  }
+
+  // 仅门店过滤(特殊场景)
+  return {
+    sql: ` AND ${prefix}store_id=?`,
+    params: [user.store_id]
+  };
+}
+
+// 专门用于 transactions 表的过滤器（用于统计和导出）
+function getTransactionFilter(user) {
+  const f = getDataFilter(user, { tableAlias: 't', includeCreatedBy: true });
+  return f;
+}
+
 async function callDeepSeek(apiKey, prompt, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -186,7 +216,7 @@ app.post('/api/user/update-nickname', authMiddleware, (req, res) => {
 // ==================== PROPERTIES ====================
 app.get('/api/properties', authMiddleware, (req, res) => {
   const { status, search } = req.query;
-  const f = getStoreFilter(req.user);
+  const f = getDataFilter(req.user, { includeCreatedBy: true });
   let sql = 'SELECT * FROM properties WHERE 1=1' + f.sql;
   const params = [...f.params];
   if (status) { sql += ' AND status=?'; params.push(status); }
@@ -226,6 +256,12 @@ app.post('/api/properties', authMiddleware, (req, res) => {
 });
 
 app.put('/api/properties/:id', authMiddleware, (req, res) => {
+  const existing = get('SELECT * FROM properties WHERE id=?', [req.params.id]);
+  if (!existing) return res.status(404).json({ error: '房源不存在' });
+  if (req.user.role !== 'admin' && existing.created_by !== req.user.id && existing.created_by !== null) {
+    return res.status(403).json({ error: '无权修改该房源' });
+  }
+
   const { title, address, area, price, min_price, unit_type, floor, total_floors, orientation,
     amenities, photo_url, description, status, owner_name, owner_phone, owner_wechat, notes } = req.body;
   run(`UPDATE properties SET title=?,address=?,area=?,price=?,min_price=?,unit_type=?,floor=?,total_floors=?,
@@ -238,6 +274,12 @@ app.put('/api/properties/:id', authMiddleware, (req, res) => {
 });
 
 app.delete('/api/properties/:id', authMiddleware, (req, res) => {
+  const existing = get('SELECT * FROM properties WHERE id=?', [req.params.id]);
+  if (!existing) return res.status(404).json({ error: '房源不存在' });
+  if (req.user.role !== 'admin' && existing.created_by !== req.user.id && existing.created_by !== null) {
+    return res.status(403).json({ error: '无权删除该房源' });
+  }
+
   run('DELETE FROM properties WHERE id=?', [req.params.id]);
   res.json({ success: true });
 });
@@ -245,10 +287,10 @@ app.delete('/api/properties/:id', authMiddleware, (req, res) => {
 // ==================== CUSTOMERS ====================
 app.get('/api/customers', authMiddleware, (req, res) => {
   const { grade, search, customer_type } = req.query;
-  const f = getStoreFilter(req.user);
+  const f = getDataFilter(req.user, { tableAlias: 'c', includeCreatedBy: true });
   let sql = `SELECT c.*,
     (SELECT MAX(created_at) FROM follow_ups WHERE customer_id = c.id) as last_follow_up_at
-    FROM customers c WHERE 1=1` + f.sql.replace('store_id', 'c.store_id');
+    FROM customers c WHERE 1=1` + f.sql;
   const params = [...f.params];
   if (grade) { sql += ' AND c.grade=?'; params.push(grade); }
   if (customer_type) { sql += ' AND c.customer_type=?'; params.push(customer_type); }
@@ -260,8 +302,36 @@ app.get('/api/customers', authMiddleware, (req, res) => {
 app.get('/api/customers/:id', authMiddleware, (req, res) => {
   const customer = get('SELECT * FROM customers WHERE id=?', [req.params.id]);
   if (!customer) return res.status(404).json({ error: '客户不存在' });
-  const followUps = all('SELECT * FROM follow_ups WHERE customer_id=? ORDER BY created_at DESC', [req.params.id]);
-  const reminders = all('SELECT * FROM reminders WHERE customer_id=? AND is_done=0 ORDER BY remind_at', [req.params.id]);
+
+  // 权限检查
+  if (req.user.role !== 'admin' && customer.created_by !== req.user.id && customer.created_by !== null) {
+    return res.status(403).json({ error: '无权访问该客户' });
+  }
+
+  // 跟进记录过滤
+  const followUpFilter = req.user.role === 'admin'
+    ? ''
+    : ' AND (created_by=? OR created_by IS NULL)';
+  const followUpParams = req.user.role === 'admin'
+    ? [req.params.id]
+    : [req.params.id, req.user.id];
+  const followUps = all(
+    `SELECT * FROM follow_ups WHERE customer_id=?${followUpFilter} ORDER BY created_at DESC`,
+    followUpParams
+  );
+
+  // 提醒过滤
+  const reminderFilter = req.user.role === 'admin'
+    ? ''
+    : ' AND (created_by=? OR created_by IS NULL)';
+  const reminderParams = req.user.role === 'admin'
+    ? [req.params.id]
+    : [req.params.id, req.user.id];
+  const reminders = all(
+    `SELECT * FROM reminders WHERE customer_id=? AND is_done=0${reminderFilter} ORDER BY remind_at`,
+    reminderParams
+  );
+
   const linkedProperty = customer.linked_property_id ? get('SELECT * FROM properties WHERE id=?', [customer.linked_property_id]) : null;
   res.json({ ...customer, followUps, reminders, linkedProperty });
 });
@@ -279,6 +349,12 @@ app.post('/api/customers', authMiddleware, (req, res) => {
 });
 
 app.put('/api/customers/:id', authMiddleware, (req, res) => {
+  const existing = get('SELECT * FROM customers WHERE id=?', [req.params.id]);
+  if (!existing) return res.status(404).json({ error: '客户不存在' });
+  if (req.user.role !== 'admin' && existing.created_by !== req.user.id && existing.created_by !== null) {
+    return res.status(403).json({ error: '无权修改该客户' });
+  }
+
   const { name, phone, wechat, customer_type, budget_min, budget_max,
     preferred_areas, requirements, source, grade, notes } = req.body;
   run(`UPDATE customers SET name=?,phone=?,wechat=?,customer_type=?,budget_min=?,budget_max=?,
@@ -289,7 +365,15 @@ app.put('/api/customers/:id', authMiddleware, (req, res) => {
 });
 
 app.delete('/api/customers/:id', authMiddleware, (req, res) => {
+  const existing = get('SELECT * FROM customers WHERE id=?', [req.params.id]);
+  if (!existing) return res.status(404).json({ error: '客户不存在' });
+  if (req.user.role !== 'admin' && existing.created_by !== req.user.id && existing.created_by !== null) {
+    return res.status(403).json({ error: '无权删除该客户' });
+  }
+
   run('DELETE FROM customers WHERE id=?', [req.params.id]);
+  run('DELETE FROM follow_ups WHERE customer_id=?', [req.params.id]);
+  run('DELETE FROM reminders WHERE customer_id=?', [req.params.id]);
   res.json({ success: true });
 });
 
@@ -297,8 +381,8 @@ app.delete('/api/customers/:id', authMiddleware, (req, res) => {
 app.post('/api/followups', authMiddleware, (req, res) => {
   const id = uuidv4();
   const { customer_id, content, method, result, next_follow_up_at } = req.body;
-  run(`INSERT INTO follow_ups (id,customer_id,content,method,result,next_follow_up_at,created_by) VALUES (?,?,?,?,?,?,?)`,
-    [id, customer_id, content, method, result, next_follow_up_at, req.user.id]);
+  run(`INSERT INTO follow_ups (id,customer_id,content,method,result,next_follow_up_at,store_id,created_by) VALUES (?,?,?,?,?,?,?,?)`,
+    [id, customer_id, content, method, result, next_follow_up_at, req.user.store_id, req.user.id]);
   res.json(get('SELECT * FROM follow_ups WHERE id=?', [id]));
 });
 
@@ -332,8 +416,8 @@ app.post('/api/ai/analyze-chat', authMiddleware, async (req, res) => {
     catch { analysis = { summary: analysisText, detected_appointment: { found: false } }; }
 
     const followUpId = uuidv4();
-    run(`INSERT INTO follow_ups (id,customer_id,content,method,ai_analysis,created_by) VALUES (?,?,?,?,?,?)`,
-      [followUpId, customer_id||null, chat_content, 'AI分析', JSON.stringify(analysis), req.user.id]);
+    run(`INSERT INTO follow_ups (id,customer_id,content,method,ai_analysis,store_id,created_by) VALUES (?,?,?,?,?,?,?)`,
+      [followUpId, customer_id||null, chat_content, 'AI分析', JSON.stringify(analysis), req.user.store_id, req.user.id]);
 
     res.json({ analysis, follow_up_id: followUpId });
   } catch (error) {
@@ -343,10 +427,10 @@ app.post('/api/ai/analyze-chat', authMiddleware, async (req, res) => {
 
 // ==================== REMINDERS ====================
 app.get('/api/reminders', authMiddleware, (req, res) => {
-  const f = getStoreFilter(req.user);
+  const f = getDataFilter(req.user, { tableAlias: 'r', includeCreatedBy: true });
   const sql = `SELECT r.*,c.name as customer_name FROM reminders r
     LEFT JOIN customers c ON r.customer_id=c.id
-    WHERE r.is_done=0${f.sql.replace('store_id', 'r.store_id')} ORDER BY r.remind_at`;
+    WHERE r.is_done=0${f.sql} ORDER BY r.remind_at`;
   res.json(all(sql, f.params));
 });
 
@@ -354,22 +438,28 @@ app.post('/api/reminders', authMiddleware, (req, res) => {
   const id = uuidv4();
   const { customer_id, title, content, remind_at } = req.body;
   if (!title || !remind_at) return res.status(400).json({ error: '标题和提醒时间必填' });
-  run(`INSERT INTO reminders (id,customer_id,title,content,remind_at,store_id) VALUES (?,?,?,?,?,?)`,
-    [id, customer_id||null, title, content||'', remind_at, req.user.store_id]);
+  run(`INSERT INTO reminders (id,customer_id,title,content,remind_at,store_id,created_by) VALUES (?,?,?,?,?,?,?)`,
+    [id, customer_id||null, title, content||'', remind_at, req.user.store_id, req.user.id]);
   res.json(get('SELECT * FROM reminders WHERE id=?', [id]));
 });
 
 app.put('/api/reminders/:id/done', authMiddleware, (req, res) => {
+  const existing = get('SELECT * FROM reminders WHERE id=?', [req.params.id]);
+  if (!existing) return res.status(404).json({ error: '提醒不存在' });
+  if (req.user.role !== 'admin' && existing.created_by !== req.user.id && existing.created_by !== null) {
+    return res.status(403).json({ error: '无权操作该提醒' });
+  }
+
   run('UPDATE reminders SET is_done=1 WHERE id=?', [req.params.id]);
-  res.json({ success: true });
+  res.json(get('SELECT * FROM reminders WHERE id=?', [req.params.id]));
 });
 
 // ==================== TRANSACTIONS ====================
 app.get('/api/transactions', authMiddleware, (req, res) => {
-  const f = getStoreFilter(req.user);
+  const f = getDataFilter(req.user, { tableAlias: 't', includeCreatedBy: true });
   const sql = `SELECT t.*,c.name as customer_name,p.title as property_title,p.address as property_address
     FROM transactions t LEFT JOIN customers c ON t.customer_id=c.id LEFT JOIN properties p ON t.property_id=p.id
-    WHERE 1=1${f.sql.replace('store_id', 't.store_id')} ORDER BY t.created_at DESC`;
+    WHERE 1=1${f.sql} ORDER BY t.created_at DESC`;
   res.json(all(sql, f.params));
 });
 
@@ -385,6 +475,12 @@ app.post('/api/transactions', authMiddleware, (req, res) => {
 });
 
 app.put('/api/transactions/:id', authMiddleware, (req, res) => {
+  const existing = get('SELECT * FROM transactions WHERE id=?', [req.params.id]);
+  if (!existing) return res.status(404).json({ error: '交易不存在' });
+  if (req.user.role !== 'admin' && existing.created_by !== req.user.id && existing.created_by !== null) {
+    return res.status(403).json({ error: '无权修改该交易' });
+  }
+
   const { stage, deal_price, commission_rate, notes } = req.body;
   const commission_amount = deal_price ? (deal_price * commission_rate / 100) : null;
   run(`UPDATE transactions SET stage=?,deal_price=?,commission_rate=?,commission_amount=?,notes=?,updated_at=datetime('now') WHERE id=?`,
@@ -397,10 +493,16 @@ app.put('/api/transactions/:id', authMiddleware, (req, res) => {
 // ==================== STATS ====================
 app.get('/api/stats', authMiddleware, (req, res) => {
   try {
-    const f = getStoreFilter(req.user);
+    const f = getDataFilter(req.user, { includeCreatedBy: true });
     const w = f.sql ? f.sql.replace(' AND ', ' WHERE ') : '';
     const and = f.sql;
     const p = f.params;
+
+    // 专门用于 transactions 表的过滤
+    const tf = getTransactionFilter(req.user);
+    const tAnd = tf.sql;
+    const tParams = tf.params;
+
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
     const quarterStart = new Date(now.getFullYear(), Math.floor(now.getMonth()/3)*3, 1).toISOString();
@@ -410,7 +512,7 @@ app.get('/api/stats', authMiddleware, (req, res) => {
       const start = d.toISOString();
       const end = new Date(d.getFullYear(), d.getMonth()+1, 1).toISOString();
       const r = get(`SELECT COUNT(*) as deals, COALESCE(SUM(commission_amount),0) as commission
-        FROM transactions WHERE stage='completed'${and} AND created_at>=? AND created_at<?`, [...p, start, end]);
+        FROM transactions t WHERE stage='completed'${tAnd} AND t.created_at>=? AND t.created_at<?`, [...tParams, start, end]);
       monthlyTrend.push({ month: `${d.getMonth()+1}月`, deals: r?.deals||0, commission: r?.commission||0 });
     }
     res.json({
@@ -422,14 +524,15 @@ app.get('/api/stats', authMiddleware, (req, res) => {
       customerByGrade: all(`SELECT grade, COUNT(*) as count FROM customers${w} GROUP BY grade`, p),
       customerBySource: all(`SELECT source, COUNT(*) as count FROM customers WHERE source IS NOT NULL${and} GROUP BY source`, p),
       monthDeals: get(`SELECT COUNT(*) as count, COALESCE(SUM(deal_price),0) as total, COALESCE(SUM(commission_amount),0) as commission
-        FROM transactions WHERE stage='completed'${and} AND created_at>=?`, [...p, monthStart]),
+        FROM transactions t WHERE stage='completed'${tAnd} AND t.created_at>=?`, [...tParams, monthStart]),
       quarterDeals: get(`SELECT COUNT(*) as count, COALESCE(SUM(deal_price),0) as total, COALESCE(SUM(commission_amount),0) as commission
-        FROM transactions WHERE stage='completed'${and} AND created_at>=?`, [...p, quarterStart]),
-      transactionByStage: all(`SELECT stage, COUNT(*) as count FROM transactions${w} GROUP BY stage`, p),
+        FROM transactions t WHERE stage='completed'${tAnd} AND t.created_at>=?`, [...tParams, quarterStart]),
+      transactionByStage: all(`SELECT stage, COUNT(*) as count FROM transactions t${tAnd ? ' WHERE 1=1' + tAnd : ''} GROUP BY stage`, tParams),
       pendingReminders: get(`SELECT COUNT(*) as count FROM reminders WHERE is_done=0${and} AND remind_at<=datetime('now','+3 days')`, p)?.count||0,
       monthlyTrend
     });
   } catch(e) {
+    console.error('Stats error:', e);
     res.json({ totalProperties:0, propertyByStatus:[], totalCustomers:0, totalBuyers:0, totalSellers:0,
       customerByGrade:[], customerBySource:[], monthDeals:{count:0,total:0,commission:0},
       quarterDeals:{count:0,total:0,commission:0}, transactionByStage:[], pendingReminders:0, monthlyTrend:[] });
@@ -438,15 +541,20 @@ app.get('/api/stats', authMiddleware, (req, res) => {
 
 // ==================== EXPORT ====================
 app.get('/api/export', authMiddleware, (req, res) => {
-  const format = req.query.format || (req.user.role === 'admin' ? 'csv' : 'excel'); // 中介默认Excel，管理员默认CSV
-  const f = getStoreFilter(req.user);
+  const format = req.query.format || (req.user.role === 'admin' ? 'csv' : 'excel');
+  const f = getDataFilter(req.user, { includeCreatedBy: true });
   const and = f.sql; const w = f.sql ? f.sql.replace(' AND ', ' WHERE ') : ''; const p = f.params;
+
+  // 专门用于 transactions 表的过滤
+  const tf = getTransactionFilter(req.user);
+  const tAnd = tf.sql;
+  const tParams = tf.params;
 
   const properties = all(`SELECT p.*, s.name as store_name FROM properties p LEFT JOIN stores s ON p.store_id=s.id${w} ORDER BY p.created_at DESC`, p);
   const customers = all(`SELECT c.*, s.name as store_name FROM customers c LEFT JOIN stores s ON c.store_id=s.id${w} ORDER BY c.created_at DESC`, p);
   const transactions = all(`SELECT t.*, c.name as customer_name, p.title as property_title, s.name as store_name
     FROM transactions t LEFT JOIN customers c ON t.customer_id=c.id LEFT JOIN properties p ON t.property_id=p.id
-    LEFT JOIN stores s ON t.store_id=s.id WHERE 1=1${and.replace('store_id','t.store_id')} ORDER BY t.created_at DESC`, p);
+    LEFT JOIN stores s ON t.store_id=s.id WHERE 1=1${tAnd} ORDER BY t.created_at DESC`, tParams);
 
   const date = new Date().toISOString().split('T')[0];
 

@@ -93,6 +93,8 @@ async function initDB() {
     "ALTER TABLE properties ADD COLUMN decoration TEXT",
     "ALTER TABLE properties ADD COLUMN build_year TEXT",
     "ALTER TABLE properties ADD COLUMN urgent INTEGER DEFAULT 0",
+    "ALTER TABLE reminders ADD COLUMN created_by TEXT",
+    "ALTER TABLE follow_ups ADD COLUMN store_id TEXT",
   ];
   for (const sql of migrations) {
     try { db.run(sql); } catch(e) { /* column already exists */ }
