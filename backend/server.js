@@ -237,17 +237,17 @@ app.post('/api/properties', authMiddleware, (req, res) => {
   const { community_name, address, area, price, min_price, rooms, halls, baths, unit_room,
     property_type, decoration, build_year, urgent, floor, total_floors, orientation,
     amenities, photo_url, description, status = 'available',
-    owner_name, owner_phone, owner_wechat, notes } = req.body;
+    owner_name, owner_phone, owner_wechat, notes, listing_type = 'sale', rent, rental_period, payment_method, property_years } = req.body;
 
   run(`INSERT INTO properties (id,community_name,address,area,price,min_price,rooms,halls,baths,unit_room,
     property_type,decoration,build_year,urgent,floor,total_floors,orientation,amenities,photo_url,description,status,
-    owner_name,owner_phone,owner_wechat,notes,store_id,created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    owner_name,owner_phone,owner_wechat,notes,listing_type,rent,rental_period,payment_method,property_years,store_id,created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [id, community_name||'', address||'', area||null, price||null, min_price||null,
      rooms||null, halls||null, baths||null, unit_room||'',
      property_type||'住宅', decoration||'', build_year||null, urgent||0,
      floor||'', total_floors||'', orientation||'', amenities||'', photo_url||'', description||'', status,
-     owner_name||'', owner_phone||'', owner_wechat||'', notes||'', req.user.store_id||null, req.user.id]);
+     owner_name||'', owner_phone||'', owner_wechat||'', notes||'', listing_type||'sale', rent||null, rental_period||'', payment_method||'', property_years||'', req.user.store_id||null, req.user.id]);
 
   // Auto-create seller customer if owner info provided
   if (owner_name || owner_phone) {
@@ -276,16 +276,16 @@ app.put('/api/properties/:id', authMiddleware, (req, res) => {
 
   const { community_name, address, area, price, min_price, rooms, halls, baths, unit_room,
     property_type, decoration, build_year, urgent, floor, total_floors, orientation,
-    amenities, photo_url, description, status, owner_name, owner_phone, owner_wechat, notes } = req.body;
+    amenities, photo_url, description, status, owner_name, owner_phone, owner_wechat, notes, listing_type, rent, rental_period, payment_method, property_years } = req.body;
 
   run(`UPDATE properties SET community_name=?,address=?,area=?,price=?,min_price=?,rooms=?,halls=?,baths=?,unit_room=?,
     property_type=?,decoration=?,build_year=?,urgent=?,floor=?,total_floors=?,orientation=?,amenities=?,photo_url=?,
-    description=?,status=?,owner_name=?,owner_phone=?,owner_wechat=?,notes=?,updated_at=datetime('now') WHERE id=?`,
+    description=?,status=?,owner_name=?,owner_phone=?,owner_wechat=?,notes=?,listing_type=?,rent=?,rental_period=?,payment_method=?,property_years=?,updated_at=datetime('now') WHERE id=?`,
     [community_name||'', address||'', area||null, price||null, min_price||null,
      rooms||null, halls||null, baths||null, unit_room||'',
      property_type||'住宅', decoration||'', build_year||null, urgent||0,
      floor||'', total_floors||'', orientation||'', amenities||'', photo_url||'', description||'', status,
-     owner_name||'', owner_phone||'', owner_wechat||'', notes||'', req.params.id]);
+     owner_name||'', owner_phone||'', owner_wechat||'', notes||'', listing_type||'sale', rent||null, rental_period||'', payment_method||'', property_years||'', req.params.id]);
 
   res.json(get('SELECT * FROM properties WHERE id=?', [req.params.id]));
 });
@@ -398,6 +398,114 @@ app.get('/api/customers/:id', authMiddleware, (req, res) => {
 
   const linkedProperty = customer.linked_property_id ? get('SELECT * FROM properties WHERE id=?', [customer.linked_property_id]) : null;
   res.json({ ...customer, followUps, reminders, linkedProperty });
+});
+
+// AI综合分析客户
+app.post('/api/customers/:id/ai-analysis', authMiddleware, async (req, res) => {
+  const customer = get('SELECT * FROM customers WHERE id=?', [req.params.id]);
+  if (!customer) return res.status(404).json({ error: '客户不存在' });
+
+  // 权限检查
+  if (req.user.role !== 'admin' && customer.created_by !== req.user.id && customer.created_by !== null) {
+    return res.status(403).json({ error: '无权访问该客户' });
+  }
+
+  // 获取所有回访记录
+  const followUpFilter = req.user.role === 'admin' ? '' : ' AND (created_by=? OR created_by IS NULL)';
+  const followUpParams = req.user.role === 'admin' ? [req.params.id] : [req.params.id, req.user.id];
+  const followUps = all(
+    `SELECT * FROM follow_ups WHERE customer_id=?${followUpFilter} ORDER BY created_at ASC`,
+    followUpParams
+  );
+
+  if (!followUps || followUps.length === 0) {
+    return res.status(400).json({ error: '该客户暂无回访记录，无法进行AI分析' });
+  }
+
+  // 获取API Key
+  const apiKey = getDeepSeekKey(req.user);
+  if (!apiKey) {
+    return res.status(400).json({ error: '未配置DeepSeek API Key，请在系统设置中配置' });
+  }
+
+  try {
+    // 构建分析提示词
+    const followUpHistory = followUps.map((f, idx) => {
+      return `第${idx + 1}次回访（${new Date(f.created_at).toLocaleDateString('zh-CN')}）：
+方式：${f.method || '未记录'}
+内容：${f.content || '无'}
+结果：${f.result || '无'}`;
+    }).join('\n\n');
+
+    const prompt = `你是一位专业的房产中介顾问。请根据以下客户的历史回访记录，进行综合分析：
+
+客户基本信息：
+- 姓名：${customer.name}
+- 类型：${customer.customer_type === 'buyer' ? '买方' : '卖方'}
+- 预算：${customer.budget_min || '?'}~${customer.budget_max || '?'}万
+- 意向区域：${customer.preferred_areas || '未指定'}
+- 需求：${customer.requirements || '无'}
+- 等级：${customer.grade}类客户
+
+历史回访记录：
+${followUpHistory}
+
+请以JSON格式返回分析结果，包含以下字段：
+{
+  "overall_intention": "整体意向程度（高/中/低）",
+  "deal_probability": 成交概率（0-100的数字）,
+  "key_concerns": ["主要关注点1", "主要关注点2"],
+  "summary": "综合评估（200字以内）",
+  "next_steps": ["建议下一步行动1", "建议下一步行动2"]
+}
+
+只返回JSON，不要其他内容。`;
+
+    const response = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('DeepSeek API error:', errorText);
+      return res.status(500).json({ error: 'AI分析失败：' + errorText });
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+
+    if (!content) {
+      return res.status(500).json({ error: 'AI返回内容为空' });
+    }
+
+    // 解析JSON
+    let analysis;
+    try {
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        analysis = JSON.parse(jsonMatch[0]);
+      } else {
+        analysis = JSON.parse(content);
+      }
+    } catch (e) {
+      console.error('JSON parse error:', e, 'Content:', content);
+      return res.status(500).json({ error: 'AI返回格式错误' });
+    }
+
+    res.json(analysis);
+  } catch (error) {
+    console.error('AI analysis error:', error);
+    res.status(500).json({ error: 'AI分析失败：' + error.message });
+  }
 });
 
 app.post('/api/customers', authMiddleware, (req, res) => {
@@ -919,12 +1027,11 @@ app.get('/api/transactions', authMiddleware, (req, res) => {
 
 app.post('/api/transactions', authMiddleware, (req, res) => {
   const id = uuidv4();
-  const { customer_id, property_id, stage, deal_price, commission_rate = 2.0, notes } = req.body;
+  const { transaction_type = 'sale', seller_id, customer_id, property_id, deal_price, commission_rate = 2.0, rent, rental_period, deposit, notes } = req.body;
   const commission_amount = deal_price ? (deal_price * commission_rate / 100) : null;
-  run(`INSERT INTO transactions (id,customer_id,property_id,stage,deal_price,commission_rate,commission_amount,notes,store_id,created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    [id, customer_id, property_id, stage, deal_price, commission_rate, commission_amount, notes, req.user.store_id, req.user.id]);
-  if (stage === 'completed') run("UPDATE properties SET status='sold' WHERE id=?", [property_id]);
+  run(`INSERT INTO transactions (id,transaction_type,seller_id,customer_id,property_id,deal_price,commission_rate,commission_amount,rent,rental_period,deposit,notes,store_id,created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, transaction_type, seller_id, customer_id, property_id, deal_price, commission_rate, commission_amount, rent, rental_period, deposit, notes, req.user.store_id, req.user.id]);
   res.json(get('SELECT * FROM transactions WHERE id=?', [id]));
 });
 
@@ -935,13 +1042,81 @@ app.put('/api/transactions/:id', authMiddleware, (req, res) => {
     return res.status(403).json({ error: '无权修改该交易' });
   }
 
-  const { stage, deal_price, commission_rate, notes } = req.body;
+  const { transaction_type, seller_id, deal_price, commission_rate, rent, rental_period, deposit, notes } = req.body;
   const commission_amount = deal_price ? (deal_price * commission_rate / 100) : null;
-  run(`UPDATE transactions SET stage=?,deal_price=?,commission_rate=?,commission_amount=?,notes=?,updated_at=datetime('now') WHERE id=?`,
-    [stage, deal_price, commission_rate, commission_amount, notes, req.params.id]);
+  run(`UPDATE transactions SET transaction_type=?,seller_id=?,deal_price=?,commission_rate=?,commission_amount=?,rent=?,rental_period=?,deposit=?,notes=?,updated_at=datetime('now') WHERE id=?`,
+    [transaction_type, seller_id, deal_price, commission_rate, commission_amount, rent, rental_period, deposit, notes, req.params.id]);
   const tx = get('SELECT * FROM transactions WHERE id=?', [req.params.id]);
-  if (stage === 'completed') run("UPDATE properties SET status='sold' WHERE id=?", [tx.property_id]);
   res.json(tx);
+});
+
+// Generate contract document
+app.get('/api/transactions/:id/contract', authMiddleware, (req, res) => {
+  try {
+    const tx = get(`
+      SELECT t.*,
+        c.name as buyer_name, c.phone as buyer_phone, c.wechat as buyer_wechat,
+        s.name as seller_name, s.phone as seller_phone, s.wechat as seller_wechat,
+        p.community_name, p.address, p.area, p.rooms, p.halls, p.baths, p.floor, p.total_floors
+      FROM transactions t
+      LEFT JOIN customers c ON t.customer_id = c.id
+      LEFT JOIN customers s ON t.seller_id = s.id
+      LEFT JOIN properties p ON t.property_id = p.id
+      WHERE t.id = ?
+    `, [req.params.id]);
+
+    if (!tx) return res.status(404).json({ error: '交易不存在' });
+
+    const PizZip = require('pizzip');
+    const Docxtemplater = require('docxtemplater');
+    const fs = require('fs');
+    const path = require('path');
+
+    const templatePath = path.join(__dirname, 'templates', 'contract_template.docx');
+
+    // Check if template exists
+    if (!fs.existsSync(templatePath)) {
+      return res.status(500).json({ error: '合同模板不存在，请联系管理员' });
+    }
+
+    const content = fs.readFileSync(templatePath, 'binary');
+    const zip = new PizZip(content);
+    const doc = new Docxtemplater(zip, {
+      paragraphLoop: true,
+      linebreaks: true,
+    });
+
+    // Set template data
+    doc.render({
+      seller_name: tx.seller_name || '',
+      seller_phone: tx.seller_phone || '',
+      seller_wechat: tx.seller_wechat || '',
+      buyer_name: tx.buyer_name || '',
+      buyer_phone: tx.buyer_phone || '',
+      buyer_wechat: tx.buyer_wechat || '',
+      community_name: tx.community_name || '',
+      address: tx.address || '',
+      area: tx.area || '',
+      rooms: tx.rooms || '',
+      halls: tx.halls || '',
+      baths: tx.baths || '',
+      floor: tx.floor || '',
+      total_floors: tx.total_floors || '',
+      deal_price: tx.deal_price || '',
+      commission_rate: tx.commission_rate || '',
+      commission_amount: tx.commission_amount || '',
+      date: new Date().toLocaleDateString('zh-CN'),
+    });
+
+    const buf = doc.getZip().generate({ type: 'nodebuffer' });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename=contract_${tx.id}.docx`);
+    res.send(buf);
+  } catch (error) {
+    console.error('生成合同失败:', error);
+    res.status(500).json({ error: '生成合同失败: ' + error.message });
+  }
 });
 
 // ==================== STATS ====================
@@ -966,9 +1141,39 @@ app.get('/api/stats', authMiddleware, (req, res) => {
       const start = d.toISOString();
       const end = new Date(d.getFullYear(), d.getMonth()+1, 1).toISOString();
       const r = get(`SELECT COUNT(*) as deals, COALESCE(SUM(commission_amount),0) as commission
-        FROM transactions t WHERE stage='completed'${tAnd} AND t.created_at>=? AND t.created_at<?`, [...tParams, start, end]);
+        FROM transactions t WHERE deal_price IS NOT NULL AND deal_price > 0${tAnd} AND t.created_at>=? AND t.created_at<?`, [...tParams, start, end]);
       monthlyTrend.push({ month: `${d.getMonth()+1}月`, deals: r?.deals||0, commission: r?.commission||0 });
     }
+
+    // Admin-specific stats
+    let storeStats = [];
+    let agentStats = [];
+    if (req.user.role === 'admin') {
+      // Store statistics
+      storeStats = all(`
+        SELECT s.id, s.name,
+          (SELECT COUNT(*) FROM properties WHERE store_id = s.id) as property_count,
+          (SELECT COUNT(*) FROM customers WHERE store_id = s.id) as customer_count,
+          (SELECT COUNT(*) FROM transactions WHERE store_id = s.id AND deal_price IS NOT NULL AND deal_price > 0) as deal_count,
+          (SELECT COALESCE(SUM(commission_amount), 0) FROM transactions WHERE store_id = s.id AND deal_price IS NOT NULL AND deal_price > 0) as total_commission
+        FROM stores s
+        ORDER BY total_commission DESC
+      `);
+
+      // Agent statistics
+      agentStats = all(`
+        SELECT u.id, u.name, u.agent_id, u.nickname, s.name as store_name,
+          (SELECT COUNT(*) FROM properties WHERE created_by = u.id) as property_count,
+          (SELECT COUNT(*) FROM customers WHERE created_by = u.id) as customer_count,
+          (SELECT COUNT(*) FROM transactions WHERE created_by = u.id AND deal_price IS NOT NULL AND deal_price > 0) as deal_count,
+          (SELECT COALESCE(SUM(commission_amount), 0) FROM transactions WHERE created_by = u.id AND deal_price IS NOT NULL AND deal_price > 0) as total_commission
+        FROM users u
+        LEFT JOIN stores s ON u.store_id = s.id
+        WHERE u.role = 'agent'
+        ORDER BY total_commission DESC
+      `);
+    }
+
     res.json({
       totalProperties: get(`SELECT COUNT(*) as count FROM properties${w}`, p)?.count||0,
       propertyByStatus: all(`SELECT status, COUNT(*) as count FROM properties${w} GROUP BY status`, p),
@@ -978,12 +1183,14 @@ app.get('/api/stats', authMiddleware, (req, res) => {
       customerByGrade: all(`SELECT grade, COUNT(*) as count FROM customers${w} GROUP BY grade`, p),
       customerBySource: all(`SELECT source, COUNT(*) as count FROM customers WHERE source IS NOT NULL${and} GROUP BY source`, p),
       monthDeals: get(`SELECT COUNT(*) as count, COALESCE(SUM(deal_price),0) as total, COALESCE(SUM(commission_amount),0) as commission
-        FROM transactions t WHERE stage='completed'${tAnd} AND t.created_at>=?`, [...tParams, monthStart]),
+        FROM transactions t WHERE deal_price IS NOT NULL AND deal_price > 0${tAnd} AND t.created_at>=?`, [...tParams, monthStart]),
       quarterDeals: get(`SELECT COUNT(*) as count, COALESCE(SUM(deal_price),0) as total, COALESCE(SUM(commission_amount),0) as commission
-        FROM transactions t WHERE stage='completed'${tAnd} AND t.created_at>=?`, [...tParams, quarterStart]),
+        FROM transactions t WHERE deal_price IS NOT NULL AND deal_price > 0${tAnd} AND t.created_at>=?`, [...tParams, quarterStart]),
       transactionByStage: all(`SELECT stage, COUNT(*) as count FROM transactions t${tAnd ? ' WHERE 1=1' + tAnd : ''} GROUP BY stage`, tParams),
       pendingReminders: get(`SELECT COUNT(*) as count FROM reminders WHERE is_done=0${and} AND remind_at<=datetime('now','+3 days')`, p)?.count||0,
-      monthlyTrend
+      monthlyTrend,
+      storeStats,
+      agentStats
     });
   } catch(e) {
     console.error('Stats error:', e);
@@ -991,6 +1198,154 @@ app.get('/api/stats', authMiddleware, (req, res) => {
       customerByGrade:[], customerBySource:[], monthDeals:{count:0,total:0,commission:0},
       quarterDeals:{count:0,total:0,commission:0}, transactionByStage:[], pendingReminders:0, monthlyTrend:[] });
   }
+});
+
+// ==================== AGENT MANAGEMENT ====================
+// Get all stores
+app.get('/api/stores', authMiddleware, (req, res) => {
+  const stores = all('SELECT * FROM stores ORDER BY name');
+  res.json(stores);
+});
+
+// Get all agents (admin only)
+app.get('/api/agents', authMiddleware, (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: '仅管理员可访问' });
+  }
+
+  const agents = all(`
+    SELECT u.id, u.username, u.name, u.agent_id, u.nickname, u.store_id, u.created_at,
+      s.name as store_name,
+      (SELECT COUNT(*) FROM properties WHERE created_by = u.id) as property_count,
+      (SELECT COUNT(*) FROM customers WHERE created_by = u.id) as customer_count,
+      (SELECT COUNT(*) FROM transactions WHERE created_by = u.id AND deal_price IS NOT NULL AND deal_price > 0) as deal_count,
+      (SELECT COALESCE(SUM(commission_amount), 0) FROM transactions WHERE created_by = u.id AND deal_price IS NOT NULL AND deal_price > 0) as total_commission
+    FROM users u
+    LEFT JOIN stores s ON u.store_id = s.id
+    WHERE u.role = 'agent'
+    ORDER BY u.created_at DESC
+  `);
+
+  res.json(agents);
+});
+
+// Get agent stats (admin only)
+app.get('/api/agents/:id/stats', authMiddleware, (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: '仅管理员可访问' });
+  }
+
+  const stats = get(`
+    SELECT
+      (SELECT COUNT(*) FROM properties WHERE created_by = ?) as property_count,
+      (SELECT COUNT(*) FROM customers WHERE created_by = ?) as customer_count,
+      (SELECT COUNT(*) FROM transactions WHERE created_by = ? AND deal_price IS NOT NULL AND deal_price > 0) as deal_count,
+      (SELECT COALESCE(SUM(commission_amount), 0) FROM transactions WHERE created_by = ? AND deal_price IS NOT NULL AND deal_price > 0) as total_commission
+  `, [req.params.id, req.params.id, req.params.id, req.params.id]);
+
+  res.json(stats || { property_count: 0, customer_count: 0, deal_count: 0, total_commission: 0 });
+});
+
+// Create agent (admin only)
+app.post('/api/agents', authMiddleware, (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: '仅管理员可访问' });
+  }
+
+  const { username, password, name, nickname, store_id } = req.body;
+
+  if (!username || !password || !name) {
+    return res.status(400).json({ error: '请填写用户名、密码和姓名' });
+  }
+
+  // Check if username exists
+  const existing = get('SELECT id FROM users WHERE username = ?', [username]);
+  if (existing) {
+    return res.status(400).json({ error: '用户名已存在' });
+  }
+
+  // 生成唯一的经纪人编码：12位大写字母+数字随机组合
+  function generateAgentId() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    for (let i = 0; i < 12; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  }
+
+  let finalAgentId;
+  let attempts = 0;
+  const maxAttempts = 100;
+
+  do {
+    finalAgentId = generateAgentId();
+    const duplicate = get('SELECT id FROM users WHERE agent_id = ?', [finalAgentId]);
+    if (!duplicate) break;
+    attempts++;
+  } while (attempts < maxAttempts);
+
+  if (attempts >= maxAttempts) {
+    return res.status(500).json({ error: '生成唯一经纪人编码失败，请重试' });
+  }
+
+  const id = uuidv4();
+  const hashedPassword = crypto.createHash('sha256').update(password + 'crm_salt_2026').digest('hex');
+
+  run(`INSERT INTO users (id, username, password, name, role, agent_id, nickname, store_id)
+    VALUES (?, ?, ?, ?, 'agent', ?, ?, ?)`,
+    [id, username, hashedPassword, name, finalAgentId, nickname || null, store_id || null]);
+
+  res.json(get('SELECT * FROM users WHERE id = ?', [id]));
+});
+
+// Update agent (admin only)
+app.put('/api/agents/:id', authMiddleware, (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: '仅管理员可访问' });
+  }
+
+  const { password, name, nickname, store_id } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ error: '请填写姓名' });
+  }
+
+  const existing = get('SELECT * FROM users WHERE id = ?', [req.params.id]);
+  if (!existing) {
+    return res.status(404).json({ error: '经纪人不存在' });
+  }
+
+  // agent_id 不可修改，从更新语句中移除
+  if (password) {
+    const hashedPassword = crypto.createHash('sha256').update(password + 'crm_salt_2026').digest('hex');
+    run(`UPDATE users SET password = ?, name = ?, nickname = ?, store_id = ? WHERE id = ?`,
+      [hashedPassword, name, nickname || null, store_id || null, req.params.id]);
+  } else {
+    run(`UPDATE users SET name = ?, nickname = ?, store_id = ? WHERE id = ?`,
+      [name, nickname || null, store_id || null, req.params.id]);
+  }
+
+  res.json(get('SELECT * FROM users WHERE id = ?', [req.params.id]));
+});
+
+// Delete agent (admin only)
+app.delete('/api/agents/:id', authMiddleware, (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: '仅管理员可访问' });
+  }
+
+  const existing = get('SELECT * FROM users WHERE id = ?', [req.params.id]);
+  if (!existing) {
+    return res.status(404).json({ error: '经纪人不存在' });
+  }
+
+  if (existing.role === 'admin') {
+    return res.status(400).json({ error: '不能删除管理员账号' });
+  }
+
+  run('DELETE FROM users WHERE id = ?', [req.params.id]);
+  res.json({ success: true });
 });
 
 // ==================== EXPORT ====================

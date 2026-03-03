@@ -11,10 +11,21 @@ export default function Customers({ user }) {
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
+  const [aiAnalyzing, setAiAnalyzing] = useState(false);
+  const [aiAnalysisResult, setAiAnalysisResult] = useState(null);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [editItem, setEditItem] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
   const [showImport, setShowImport] = useState(false);
+
+  // 新增筛选状态
+  const [nameFilter, setNameFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [budgetMin, setBudgetMin] = useState('');
+  const [budgetMax, setBudgetMax] = useState('');
+  const [gradeFilter, setGradeFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
+
   const empty = { name:'',phone:'',wechat:'',customer_type:'buyer',budget_min:'',budget_max:'',
     preferred_areas:'',requirements:'',source:'',grade:'C',notes:'' };
   const [form, setForm] = useState(empty);
@@ -28,6 +39,39 @@ export default function Customers({ user }) {
     const r = await apiFetch('/api/customers?' + params);
     setCustomers(await r.json());
   };
+
+  // 客户端筛选逻辑
+  const filteredCustomers = customers.filter(c => {
+    // 姓名筛选
+    if (nameFilter && !c.name.toLowerCase().includes(nameFilter.toLowerCase())) {
+      return false;
+    }
+    // 类型筛选
+    if (typeFilter && c.customer_type !== typeFilter) {
+      return false;
+    }
+    // 预算区间筛选（仅对买方有效）
+    if (c.customer_type === 'buyer') {
+      if (budgetMin && c.budget_max && parseFloat(c.budget_max) < parseFloat(budgetMin)) {
+        return false;
+      }
+      if (budgetMax && c.budget_min && parseFloat(c.budget_min) > parseFloat(budgetMax)) {
+        return false;
+      }
+    }
+    // 等级筛选
+    if (gradeFilter && c.grade !== gradeFilter) {
+      return false;
+    }
+    // 来源筛选
+    if (sourceFilter && c.source !== sourceFilter) {
+      return false;
+    }
+    return true;
+  });
+
+  // 获取所有唯一的来源
+  const uniqueSources = [...new Set(customers.map(c => c.source).filter(Boolean))].sort();
 
   const save = async () => {
     if (!form.name) {
@@ -54,7 +98,28 @@ export default function Customers({ user }) {
     const res = await apiFetch(`/api/customers/${c.id}`);
     const data = await res.json();
     setSelectedCustomer(data);
+    setAiAnalysisResult(null);
     setShowDetail(true);
+  };
+
+  const analyzeCustomer = async () => {
+    if (!selectedCustomer) return;
+    setAiAnalyzing(true);
+    try {
+      const res = await apiFetch(`/api/customers/${selectedCustomer.id}/ai-analysis`, {
+        method: 'POST'
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'AI分析失败');
+      }
+      const data = await res.json();
+      setAiAnalysisResult(data);
+    } catch (e) {
+      alert('❌ ' + e.message);
+    } finally {
+      setAiAnalyzing(false);
+    }
   };
   const deleteCustomer = async (id) => {
     if (!window.confirm('确认删除该客户？删除后无法恢复。')) return;
@@ -167,7 +232,7 @@ export default function Customers({ user }) {
         ))}
       </div>
 
-      <div style={{ display:'flex', gap:12, marginBottom:20, flexWrap:'wrap' }}>
+      <div style={{ display:'flex', gap:12, marginBottom:16, flexWrap:'wrap' }}>
         <input className="search-input" placeholder="🔍 搜索姓名、电话..." value={search}
           onChange={e => setSearch(e.target.value)} style={{ flex:1, minWidth:200 }} />
         <button className="btn btn-primary" onClick={() => { setEditItem(null); setForm(empty); setShowForm(true); }}>+ 添加客户</button>
@@ -177,25 +242,133 @@ export default function Customers({ user }) {
         )}
       </div>
 
+      {/* 高级筛选 */}
+      <div style={{ marginBottom: 16, padding: 16, background: 'var(--bg-hover)', borderRadius: 8 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>🔍 高级筛选</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+          {/* 姓名筛选 */}
+          <div>
+            <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4, display: 'block' }}>客户姓名</label>
+            <input
+              value={nameFilter}
+              onChange={e => setNameFilter(e.target.value)}
+              placeholder="输入姓名"
+              style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+            />
+          </div>
+
+          {/* 类型筛选 */}
+          <div>
+            <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4, display: 'block' }}>客户类型</label>
+            <select
+              value={typeFilter}
+              onChange={e => setTypeFilter(e.target.value)}
+              style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+            >
+              <option value="">全部</option>
+              <option value="buyer">买方</option>
+              <option value="seller">卖方</option>
+            </select>
+          </div>
+
+          {/* 预算区间 */}
+          <div style={{ gridColumn: 'span 2' }}>
+            <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4, display: 'block' }}>预算（万元）</label>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <input
+                type="number"
+                value={budgetMin}
+                onChange={e => setBudgetMin(e.target.value)}
+                placeholder="最小"
+                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+              />
+              <span style={{ color: 'var(--text-muted)' }}>~</span>
+              <input
+                type="number"
+                value={budgetMax}
+                onChange={e => setBudgetMax(e.target.value)}
+                placeholder="最大"
+                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+              />
+            </div>
+          </div>
+
+          {/* 等级筛选 */}
+          <div>
+            <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4, display: 'block' }}>客户等级</label>
+            <select
+              value={gradeFilter}
+              onChange={e => setGradeFilter(e.target.value)}
+              style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+            >
+              <option value="">全部</option>
+              <option value="A">A类</option>
+              <option value="B">B类</option>
+              <option value="C">C类</option>
+            </select>
+          </div>
+
+          {/* 来源筛选 */}
+          <div>
+            <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4, display: 'block' }}>客户来源</label>
+            <select
+              value={sourceFilter}
+              onChange={e => setSourceFilter(e.target.value)}
+              style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+            >
+              <option value="">全部</option>
+              {uniqueSources.map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* 清除筛选按钮 */}
+        {(nameFilter || typeFilter || budgetMin || budgetMax || gradeFilter || sourceFilter) && (
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => {
+              setNameFilter('');
+              setTypeFilter('');
+              setBudgetMin('');
+              setBudgetMax('');
+              setGradeFilter('');
+              setSourceFilter('');
+            }}
+            style={{ marginTop: 12 }}
+          >
+            🔄 清除所有筛选
+          </button>
+        )}
+      </div>
+
       <div className="table-container">
         <table className="table">
           <thead><tr>
             <th style={{ width:40 }}>
-              <input type="checkbox" checked={selectedIds.length === customers.length && customers.length > 0}
+              <input type="checkbox" checked={selectedIds.length === filteredCustomers.length && filteredCustomers.length > 0}
                 onChange={toggleSelectAll} />
             </th>
-            <th>客户信息</th><th>类型</th><th>预算/价格</th><th>关联房源</th><th>等级</th><th>意向区域</th><th>来源</th>
+            <th>客户姓名</th>
+            <th>类型</th>
+            <th>预算/价格</th>
+            <th>等级</th>
+            <th>意向区域</th>
+            <th>来源</th>
+            <th>关联房源</th>
             {user?.role === 'admin' && (
               <>
                 <th>所属门店</th>
                 <th>所属经纪人</th>
               </>
             )}
-            <th>最后回访</th><th>操作</th>
+            <th>最后回访</th>
+            <th>操作</th>
           </tr></thead>
           <tbody>
-            {customers.length === 0 && <tr><td colSpan={user?.role === 'admin' ? 12 : 10} style={{ textAlign:'center', padding:40, color:'var(--text-muted)' }}>暂无客户</td></tr>}
-            {customers.map(c => (
+            {filteredCustomers.length === 0 && <tr><td colSpan={user?.role === 'admin' ? 12 : 10} style={{ textAlign:'center', padding:40, color:'var(--text-muted)' }}>暂无符合条件的客户</td></tr>}
+            {filteredCustomers.map(c => (
               <tr key={c.id}>
                 <td>
                   <input type="checkbox" checked={selectedIds.includes(c.id)}
@@ -220,15 +393,15 @@ export default function Customers({ user }) {
                       : '-'
                   }
                 </td>
+                <td><span style={{ fontWeight:700, color: GRADE_COLORS[c.grade] }}>{c.grade}类</span></td>
+                <td style={{ fontSize:13 }}>{c.preferred_areas || '-'}</td>
+                <td style={{ fontSize:13 }}>{c.source || '-'}</td>
                 <td style={{ fontSize:12, color:'var(--text-muted)' }}>
                   {c.customer_type === 'seller' && c.property_community
                     ? `${c.property_community} ${c.property_unit_room || ''}`
                     : '-'
                   }
                 </td>
-                <td><span style={{ fontWeight:700, color: GRADE_COLORS[c.grade] }}>{c.grade}类</span></td>
-                <td style={{ fontSize:13 }}>{c.preferred_areas || '-'}</td>
-                <td style={{ fontSize:13 }}>{c.source || '-'}</td>
                 {user?.role === 'admin' && (
                   <>
                     <td style={{ fontSize:13 }}>{c.store_name || '-'}</td>
@@ -241,8 +414,8 @@ export default function Customers({ user }) {
                   {c.last_follow_up_at ? new Date(c.last_follow_up_at).toLocaleDateString('zh-CN') : '暂无'}
                 </td>
                 <td>
-                  <button className="btn btn-sm" onClick={() => openDetail(c)} style={{ marginRight:6 }}>详情</button>
-                  <button className="btn btn-sm" onClick={() => openEdit(c)} style={{ marginRight:6 }}>编辑</button>
+                  <button className="btn btn-sm" onClick={() => openDetail(c)} style={{ marginRight:6, background: 'rgba(59,130,246,0.25)', borderColor: 'rgba(59,130,246,0.4)' }}>详情</button>
+                  <button className="btn btn-sm" onClick={() => openEdit(c)} style={{ marginRight:6, background: 'rgba(245,158,11,0.25)', borderColor: 'rgba(245,158,11,0.4)' }}>编辑</button>
                   <button className="btn btn-sm btn-danger" onClick={() => deleteCustomer(c.id)}>删除</button>
                 </td>
               </tr>
@@ -253,12 +426,13 @@ export default function Customers({ user }) {
 
       {showForm && (
         <div className="modal-overlay">
-          <div className="modal" style={{ maxWidth:560, maxHeight:'90vh', overflowY:'auto' }}>
+          <div className="modal" style={{ maxWidth:640, maxHeight:'90vh', overflowY:'auto' }}>
             <div className="modal-header">
               <h2>{editItem ? '✏️ 编辑客户' : '👤 添加客户'}</h2>
               <button onClick={() => setShowForm(false)} style={{ background:'none',border:'none',fontSize:20,cursor:'pointer',color:'var(--text-muted)' }}>✕</button>
             </div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+            <div className="modal-body">
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
               <div className="form-group">
                 <label>姓名 *</label>
                 <input value={form.name} onChange={e=>update('name',e.target.value)} placeholder="客户姓名" />
@@ -317,8 +491,9 @@ export default function Customers({ user }) {
                 <textarea value={form.notes} onChange={e=>update('notes',e.target.value)} rows={2} placeholder="其他备注..." />
               </div>
             </div>
-            <div style={{ display:'flex', gap:10, justifyContent:'flex-end', marginTop:20 }}>
-              <button className="btn" onClick={() => setShowForm(false)}>取消</button>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowForm(false)}>取消</button>
               <button className="btn btn-primary" onClick={save}>💾 保存</button>
             </div>
           </div>
@@ -360,7 +535,73 @@ export default function Customers({ user }) {
 
             {/* 回访记录 */}
             <div>
-              <h3 style={{ fontSize:16, fontWeight:600, marginBottom:12 }}>📝 回访记录 ({selectedCustomer.followUps?.length || 0})</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>📝 回访记录 ({selectedCustomer.followUps?.length || 0})</h3>
+                {selectedCustomer.followUps && selectedCustomer.followUps.length > 0 && (
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={analyzeCustomer}
+                    disabled={aiAnalyzing}
+                  >
+                    {aiAnalyzing ? '🤖 分析中...' : '🤖 AI综合分析'}
+                  </button>
+                )}
+              </div>
+
+              {/* AI综合分析结果 */}
+              {aiAnalysisResult && (
+                <div style={{ marginBottom: 16, padding: 16, background: 'rgba(59,130,246,0.1)', borderRadius: 8, border: '1px solid rgba(59,130,246,0.3)' }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--accent)', marginBottom: 12 }}>🤖 AI综合分析结果</div>
+
+                  {aiAnalysisResult.overall_intention && (
+                    <div style={{ marginBottom: 12 }}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>整体意向程度：</span>
+                      <span style={{ fontWeight: 600, fontSize: 14, marginLeft: 8 }}>{aiAnalysisResult.overall_intention}</span>
+                    </div>
+                  )}
+
+                  {aiAnalysisResult.deal_probability && (
+                    <div style={{ marginBottom: 12 }}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>成交概率：</span>
+                      <span style={{ fontWeight: 600, fontSize: 14, marginLeft: 8, color: 'var(--success)' }}>
+                        {aiAnalysisResult.deal_probability}%
+                      </span>
+                    </div>
+                  )}
+
+                  {aiAnalysisResult.key_concerns && aiAnalysisResult.key_concerns.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 6 }}>主要关注点：</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {aiAnalysisResult.key_concerns.map((concern, idx) => (
+                          <span key={idx} style={{ padding: '4px 10px', background: 'var(--bg-hover)', borderRadius: 12, fontSize: 12 }}>
+                            {concern}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {aiAnalysisResult.summary && (
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 6 }}>综合评估：</div>
+                      <div style={{ fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{aiAnalysisResult.summary}</div>
+                    </div>
+                  )}
+
+                  {aiAnalysisResult.next_steps && aiAnalysisResult.next_steps.length > 0 && (
+                    <div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 6 }}>建议下一步行动：</div>
+                      <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.8 }}>
+                        {aiAnalysisResult.next_steps.map((step, idx) => (
+                          <li key={idx}>{step}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {(!selectedCustomer.followUps || selectedCustomer.followUps.length === 0) ? (
                 <div style={{ textAlign:'center', padding:40, color:'var(--text-muted)', background:'var(--bg-hover)', borderRadius:8 }}>
                   暂无回访记录

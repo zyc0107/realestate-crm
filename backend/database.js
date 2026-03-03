@@ -95,6 +95,16 @@ async function initDB() {
     "ALTER TABLE properties ADD COLUMN urgent INTEGER DEFAULT 0",
     "ALTER TABLE reminders ADD COLUMN created_by TEXT",
     "ALTER TABLE follow_ups ADD COLUMN store_id TEXT",
+    "ALTER TABLE properties ADD COLUMN listing_type TEXT DEFAULT 'sale'",
+    "ALTER TABLE properties ADD COLUMN rent REAL",
+    "ALTER TABLE properties ADD COLUMN rental_period TEXT",
+    "ALTER TABLE properties ADD COLUMN payment_method TEXT",
+    "ALTER TABLE properties ADD COLUMN property_years TEXT",
+    "ALTER TABLE transactions ADD COLUMN seller_id TEXT",
+    "ALTER TABLE transactions ADD COLUMN transaction_type TEXT DEFAULT 'sale'",
+    "ALTER TABLE transactions ADD COLUMN rent REAL",
+    "ALTER TABLE transactions ADD COLUMN rental_period TEXT",
+    "ALTER TABLE transactions ADD COLUMN deposit REAL",
   ];
   for (const sql of migrations) {
     try { db.run(sql); } catch(e) { /* column already exists */ }

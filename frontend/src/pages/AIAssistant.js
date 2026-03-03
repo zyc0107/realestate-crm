@@ -136,38 +136,37 @@ export default function AIAssistant() {
         </p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 24 }}>
-        {/* 左侧：客户选择 */}
-        <div>
-          <div className="card" style={{ padding: 16 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>选择客户</h3>
-            <div style={{ maxHeight: 500, overflowY: 'auto' }}>
-              {customers.map(c => (
-                <div
-                  key={c.id}
-                  onClick={() => setSelectedCustomer(c)}
-                  style={{
-                    padding: 12,
-                    marginBottom: 8,
-                    borderRadius: 8,
-                    cursor: 'pointer',
-                    background: selectedCustomer?.id === c.id ? 'var(--accent)' : 'var(--bg-secondary)',
-                    color: selectedCustomer?.id === c.id ? 'white' : 'var(--text-primary)',
-                    border: '1px solid',
-                    borderColor: selectedCustomer?.id === c.id ? 'var(--accent)' : 'var(--border)'
-                  }}
-                >
-                  <div style={{ fontWeight: 600, marginBottom: 4 }}>{c.name}</div>
-                  <div style={{ fontSize: 12, opacity: 0.8 }}>
-                    {c.customer_type === 'buyer' ? '买家' : '卖家'} · {c.grade}类
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 24 }}>
+        {/* 客户选择下拉框 */}
+        <div className="card" style={{ padding: 16 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>选择客户</h3>
+          <select
+            value={selectedCustomer?.id || ''}
+            onChange={e => {
+              const customer = customers.find(c => c.id === e.target.value);
+              setSelectedCustomer(customer || null);
+              setResult(null);
+            }}
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              borderRadius: 8,
+              border: '1px solid var(--border)',
+              background: 'var(--bg-card)',
+              color: 'var(--text-primary)',
+              fontSize: 14
+            }}
+          >
+            <option value="">请选择客户</option>
+            {customers.map(c => (
+              <option key={c.id} value={c.id}>
+                {c.name} · {c.customer_type === 'buyer' ? '买家' : '卖家'} · {c.grade}类 {c.phone ? `(${c.phone})` : ''}
+              </option>
+            ))}
+          </select>
         </div>
 
-        {/* 右侧：AI分析 */}
+        {/* AI分析 */}
         <div>
           {/* Tab切换 */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>

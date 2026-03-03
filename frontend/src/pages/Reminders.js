@@ -75,29 +75,31 @@ export default function Reminders() {
               <h2>➕ 添加回访提醒</h2>
               <button onClick={() => setShowForm(false)} style={{ background:'none',border:'none',fontSize:20,cursor:'pointer',color:'var(--text-muted)' }}>✕</button>
             </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-              <div className="form-group">
-                <label>关联客户（可选）</label>
-                <select value={form.customer_id} onChange={e=>update('customer_id',e.target.value)}>
-                  <option value="">不关联客户</option>
-                  {customers.map(c => <option key={c.id} value={c.id}>{c.name} - {c.phone}</option>)}
-                </select>
-              </div>
-              <div className="form-group">
-                <label>提醒标题 *</label>
-                <input value={form.title} onChange={e=>update('title',e.target.value)} placeholder="例：回访张先生" />
-              </div>
-              <div className="form-group">
-                <label>提醒内容</label>
-                <textarea value={form.content} onChange={e=>update('content',e.target.value)} rows={3} placeholder="备注信息..." />
-              </div>
-              <div className="form-group">
-                <label>提醒时间 *</label>
-                <input type="datetime-local" value={form.remind_at} onChange={e=>update('remind_at',e.target.value)} />
+            <div className="modal-body">
+              <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                <div className="form-group">
+                  <label>关联客户（可选）</label>
+                  <select value={form.customer_id} onChange={e=>update('customer_id',e.target.value)}>
+                    <option value="">不关联客户</option>
+                    {customers.map(c => <option key={c.id} value={c.id}>{c.name} - {c.phone}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>提醒标题 *</label>
+                  <input value={form.title} onChange={e=>update('title',e.target.value)} placeholder="例：回访张先生" />
+                </div>
+                <div className="form-group">
+                  <label>提醒内容</label>
+                  <textarea value={form.content} onChange={e=>update('content',e.target.value)} rows={3} placeholder="备注信息..." />
+                </div>
+                <div className="form-group">
+                  <label>提醒时间 *</label>
+                  <input type="datetime-local" value={form.remind_at} onChange={e=>update('remind_at',e.target.value)} style={{ letterSpacing: '0.5px' }} />
+                </div>
               </div>
             </div>
-            <div style={{ display:'flex', gap:10, justifyContent:'flex-end', marginTop:20 }}>
-              <button className="btn" onClick={() => setShowForm(false)}>取消</button>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowForm(false)}>取消</button>
               <button className="btn btn-primary" onClick={save}>💾 保存</button>
             </div>
           </div>

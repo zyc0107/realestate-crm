@@ -121,6 +121,76 @@ export default function Dashboard({ onNavigate }) {
         </div>
       </div>
 
+      {/* Admin-specific: Store and Agent Stats */}
+      {user?.role === 'admin' && stats.storeStats && stats.storeStats.length > 0 && (
+        <>
+          <div className="card" style={{ marginTop: 20, marginBottom: 20 }}>
+            <div className="card-title">🏢 门店业绩统计</div>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>门店名称</th>
+                    <th>房源数</th>
+                    <th>客户数</th>
+                    <th>成交数</th>
+                    <th>累计佣金</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.storeStats.map(store => (
+                    <tr key={store.id}>
+                      <td style={{ fontWeight: 600 }}>{store.name}</td>
+                      <td>{store.property_count}</td>
+                      <td>{store.customer_count}</td>
+                      <td style={{ color: 'var(--success)' }}>{store.deal_count}</td>
+                      <td style={{ color: 'var(--warning)', fontWeight: 600 }}>
+                        ¥{store.total_commission ? store.total_commission.toFixed(2) : '0'}万
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="card-title">👨‍💼 经纪人业绩统计</div>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>经纪人</th>
+                    <th>所属门店</th>
+                    <th>房源数</th>
+                    <th>客户数</th>
+                    <th>成交数</th>
+                    <th>累计佣金</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.agentStats.map(agent => (
+                    <tr key={agent.id}>
+                      <td style={{ fontWeight: 600 }}>
+                        {agent.nickname || agent.name}
+                        {agent.agent_id && <span style={{ marginLeft: 6, color: 'var(--text-muted)', fontSize: 12 }}>({agent.agent_id})</span>}
+                      </td>
+                      <td>{agent.store_name || '-'}</td>
+                      <td>{agent.property_count}</td>
+                      <td>{agent.customer_count}</td>
+                      <td style={{ color: 'var(--success)' }}>{agent.deal_count}</td>
+                      <td style={{ color: 'var(--warning)', fontWeight: 600 }}>
+                        ¥{agent.total_commission ? agent.total_commission.toFixed(2) : '0'}万
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
       <div className="grid-2" style={{marginBottom: 20}}>
         {/* Monthly Trend */}
         <div className="card">

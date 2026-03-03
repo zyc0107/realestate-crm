@@ -1,0 +1,44 @@
+房产交易合同模板创建指南
+
+请使用Microsoft Word创建一个名为 contract_template.docx 的文件，并将以下内容复制到Word文档中。
+在Word中，将占位符（如 {seller_name}）保持原样，docxtemplater会自动替换这些占位符。
+
+===========================================
+
+房产交易合同
+
+甲方（卖方）：{seller_name}
+联系电话：{seller_phone}
+微信号：{seller_wechat}
+
+乙方（买方）：{buyer_name}
+联系电话：{buyer_phone}
+微信号：{buyer_wechat}
+
+房产信息：
+小区名称：{community_name}
+详细地址：{address}
+建筑面积：{area}平方米
+户型：{rooms}室{halls}厅{baths}卫
+楼层：{floor}/{total_floors}层
+
+交易信息：
+成交价格：{deal_price}万元
+佣金比例：{commission_rate}%
+佣金金额：{commission_amount}万元
+
+签订日期：{date}
+
+甲方签字：________________
+
+乙方签字：________________
+
+中介方签字：________________
+
+===========================================
+
+创建步骤：
+1. 打开Microsoft Word
+2. 将上述内容（从"房产交易合同"开始到最后）复制到Word文档中
+3. 保存为 contract_template.docx
+4. 将文件放在 backend/templates/ 目录下

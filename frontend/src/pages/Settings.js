@@ -8,8 +8,6 @@ export default function Settings() {
   });
   const [userInfo, setUserInfo] = useState(null);
   const [savedInfo, setSavedInfo] = useState({});
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
   const [nicknameError, setNicknameError] = useState('');
@@ -81,24 +79,6 @@ export default function Settings() {
     }
   };
 
-  const handleTest = async () => {
-    setTesting(true); setTestResult(null);
-    const keyToTest = form.deepseek_api_key || undefined;
-    try {
-      const res = await apiFetch('/api/settings/test-key', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ api_key: keyToTest })
-      });
-      const data = await res.json();
-      setTestResult(data);
-    } catch {
-      setTestResult({ success: false, message: '网络错误，请检查后端是否运行' });
-    } finally {
-      setTesting(false);
-    }
-  };
-
   return (
     <div style={{ maxWidth: 640 }}>
 
@@ -132,22 +112,6 @@ export default function Settings() {
           </span>
         </div>
 
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button className="btn btn-secondary" onClick={handleTest} disabled={testing}>
-            {testing ? '⏳ 测试中...' : '🔌 测试连接'}
-          </button>
-        </div>
-
-        {testResult && (
-          <div style={{
-            marginTop: 12, padding: '10px 14px', borderRadius: 8, fontSize: 13,
-            background: testResult.success ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-            border: `1px solid ${testResult.success ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
-            color: testResult.success ? '#6ee7b7' : '#fca5a5'
-          }}>
-            {testResult.success ? '✅' : '❌'} {testResult.message}
-          </div>
-        )}
       </div>
 
       {/* 基本信息 */}
@@ -201,25 +165,6 @@ export default function Settings() {
           {saving ? '⏳ 保存中...' : '💾 保存设置'}
         </button>
         {saveMsg && <span style={{ color: 'var(--success)', fontSize: 14 }}>{saveMsg}</span>}
-      </div>
-
-      {/* 使用说明 */}
-      <div className="card" style={{ marginTop: 24 }}>
-        <div className="card-title">📖 关于 API Key 的说明</div>
-        <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.8 }}>
-          <p style={{ marginBottom: 8 }}>
-            <strong style={{ color: 'var(--text-primary)' }}>你自己用：</strong>
-            在此页面填入你的 DeepSeek API Key，所有 AI 分析功能就会使用你的 Key，费用由你的账户承担。
-          </p>
-          <p style={{ marginBottom: 8 }}>
-            <strong style={{ color: 'var(--text-primary)' }}>朋友/同事用：</strong>
-            如果你将系统部署给他人使用，他们可以在自己的设备上进入「系统设置」填入各自的 DeepSeek API Key，费用由各自账户承担，互不影响。
-          </p>
-          <p>
-            <strong style={{ color: 'var(--text-primary)' }}>DeepSeek 费用：</strong>
-            DeepSeek 按 token 计费，分析一次聊天记录大约消耗 0.001~0.005 元，非常便宜。充值 ¥10 可以分析几千次对话。
-          </p>
-        </div>
       </div>
     </div>
   );

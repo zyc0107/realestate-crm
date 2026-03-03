@@ -5,6 +5,7 @@ import Customers from './pages/Customers';
 import Transactions from './pages/Transactions';
 import AIAnalysis from './pages/AIAnalysis';
 import AIAssistant from './pages/AIAssistant';
+import AgentManagement from './pages/AgentManagement';
 import Reminders from './pages/Reminders';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
@@ -15,6 +16,7 @@ const NAV_ITEMS = [
   { id: 'dashboard', label: '数据看板', icon: '📊' },
   { id: 'ai-assistant', label: 'AI智能助手', icon: '🤖' },
   { id: 'ai-analysis', label: 'AI智能分析', icon: '🧠' },
+  { id: 'agent-management', label: '中介管理', icon: '👨‍💼', adminOnly: true },
   { id: 'properties', label: '房源管理', icon: '🏠' },
   { id: 'customers', label: '客户管理', icon: '👥' },
   { id: 'transactions', label: '交易管理', icon: '💼' },
@@ -27,7 +29,6 @@ export default function App() {
   const [store, setStore] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activePage, setActivePage] = useState('dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [pendingReminders, setPendingReminders] = useState(0);
   const [popupReminders, setPopupReminders] = useState([]);
 
@@ -123,6 +124,7 @@ export default function App() {
     dashboard: <Dashboard onNavigate={setActivePage} />,
     'ai-assistant': <AIAssistant />,
     'ai-analysis': <AIAnalysis />,
+    'agent-management': <AgentManagement />,
     properties: <Properties user={user} />,
     customers: <Customers user={user} />,
     transactions: <Transactions />,
@@ -132,36 +134,33 @@ export default function App() {
 
   return (
     <div className="app-layout">
-      <aside className={`sidebar ${sidebarOpen ? 'open' : 'collapsed'}`}>
+      <aside className="sidebar open">
         <div className="sidebar-header">
           <div className="logo">
             <span className="logo-icon">🏢</span>
-            {sidebarOpen && <span className="logo-text">房产中介AI助手</span>}
+            <span className="logo-text">房产中介AI助手</span>
           </div>
-          <button className="toggle-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>{sidebarOpen ? '◀' : '▶'}</button>
         </div>
         <nav className="sidebar-nav">
-          {NAV_ITEMS.map(item => (
+          {NAV_ITEMS.filter(item => !item.adminOnly || user.role === 'admin').map(item => (
             <button key={item.id} className={`nav-item ${activePage === item.id ? 'active' : ''}`}
               onClick={() => setActivePage(item.id)} title={item.label}>
               <span className="nav-icon">{item.icon}</span>
-              {sidebarOpen && <span className="nav-label">{item.label}
+              <span className="nav-label">{item.label}
                 {item.id === 'reminders' && pendingReminders > 0 && <span className="badge">{pendingReminders}</span>}
-              </span>}
+              </span>
             </button>
           ))}
         </nav>
         <div className="sidebar-footer">
-          {sidebarOpen && (
-            <div style={{ padding: '8px 16px' }}>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>
-                {user.role === 'admin' ? '👑 管理员' : '👤 ' + user.name}
-              </div>
-              <button onClick={handleLogout} style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                退出登录
-              </button>
+          <div style={{ padding: '8px 16px' }}>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>
+              {user.role === 'admin' ? '👑 管理员' : '👤 ' + user.name}
             </div>
-          )}
+            <button onClick={handleLogout} style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+              退出登录
+            </button>
+          </div>
         </div>
       </aside>
       <main className="main-content">
