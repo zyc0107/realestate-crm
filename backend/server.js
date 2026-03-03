@@ -227,21 +227,26 @@ app.get('/api/properties', authMiddleware, (req, res) => {
     WHERE 1=1` + f.sql;
   const params = [...f.params];
   if (status) { sql += ' AND p.status=?'; params.push(status); }
-  if (search) { sql += ' AND (p.title LIKE ? OR p.address LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
+  if (search) { sql += ' AND (p.community_name LIKE ? OR p.address LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
   sql += ' ORDER BY p.created_at DESC';
   res.json(all(sql, params));
 });
 
 app.post('/api/properties', authMiddleware, (req, res) => {
   const id = uuidv4();
-  const { title, address, area, price, min_price, unit_type, floor, total_floors, orientation,
+  const { community_name, address, area, price, min_price, rooms, halls, baths, unit_room,
+    property_type, decoration, build_year, urgent, floor, total_floors, orientation,
     amenities, photo_url, description, status = 'available',
     owner_name, owner_phone, owner_wechat, notes } = req.body;
-  run(`INSERT INTO properties (id,title,address,area,price,min_price,unit_type,floor,total_floors,
-    orientation,amenities,photo_url,description,status,owner_name,owner_phone,owner_wechat,notes,store_id,created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, title||'', address||'', area||null, price||null, min_price||null, unit_type||'', floor||'', total_floors||'',
-     orientation||'', amenities||'', photo_url||'', description||'', status,
+
+  run(`INSERT INTO properties (id,community_name,address,area,price,min_price,rooms,halls,baths,unit_room,
+    property_type,decoration,build_year,urgent,floor,total_floors,orientation,amenities,photo_url,description,status,
+    owner_name,owner_phone,owner_wechat,notes,store_id,created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, community_name||'', address||'', area||null, price||null, min_price||null,
+     rooms||null, halls||null, baths||null, unit_room||'',
+     property_type||'住宅', decoration||'', build_year||null, urgent||0,
+     floor||'', total_floors||'', orientation||'', amenities||'', photo_url||'', description||'', status,
      owner_name||'', owner_phone||'', owner_wechat||'', notes||'', req.user.store_id||null, req.user.id]);
 
   // Auto-create seller customer if owner info provided
@@ -252,7 +257,7 @@ app.post('/api/properties', authMiddleware, (req, res) => {
       run(`INSERT INTO customers (id,name,phone,wechat,customer_type,source,grade,notes,linked_property_id,store_id,created_by)
         VALUES (?,?,?,?,'seller','房源录入','B',?,?,?,?)`,
         [customerId, owner_name||'业主', owner_phone||'', owner_wechat||'',
-         `关联房源：${title}`, id, req.user.store_id, req.user.id]);
+         `关联房源：${community_name}`, id, req.user.store_id, req.user.id]);
     } else {
       // Link existing customer to property
       run('UPDATE customers SET linked_property_id=?, customer_type="seller" WHERE id=?', [id, existing.id]);
@@ -269,12 +274,21 @@ app.put('/api/properties/:id', authMiddleware, (req, res) => {
     return res.status(403).json({ error: '无权修改该房源' });
   }
 
-  const { title, address, area, price, min_price, unit_type, floor, total_floors, orientation,
+  const { community_name, address, area, price, min_price, rooms, halls, baths, unit_room,
+    property_type, decoration, build_year, urgent, floor, total_floors, orientation,
     amenities, photo_url, description, status, owner_name, owner_phone, owner_wechat, notes } = req.body;
-  run(`UPDATE properties SET title=?,address=?,area=?,price=?,min_price=?,unit_type=?,floor=?,total_floors=?,
-    orientation=?,amenities=?,photo_url=?,description=?,status=?,
-    owner_name=?,owner_phone=?,owner_wechat=?,notes=?,updated_at=datetime('now') WHERE id=?`,
-    [title||'', address||'', area||null, price||null, min_price||null, unit_type||'', floor||'', total_floors||'',
+
+  run(`UPDATE properties SET community_name=?,address=?,area=?,price=?,min_price=?,rooms=?,halls=?,baths=?,unit_room=?,
+    property_type=?,decoration=?,build_year=?,urgent=?,floor=?,total_floors=?,orientation=?,amenities=?,photo_url=?,
+    description=?,status=?,owner_name=?,owner_phone=?,owner_wechat=?,notes=?,updated_at=datetime('now') WHERE id=?`,
+    [community_name||'', address||'', area||null, price||null, min_price||null,
+     rooms||null, halls||null, baths||null, unit_room||'',
+     property_type||'住宅', decoration||'', build_year||null, urgent||0,
+     floor||'', total_floors||'', orientation||'', amenities||'', photo_url||'', description||'', status,
+     owner_name||'', owner_phone||'', owner_wechat||'', notes||'', req.params.id]);
+
+  res.json(get('SELECT * FROM properties WHERE id=?', [req.params.id]));
+});
      orientation||'', amenities||'', photo_url||'', description||'', status,
      owner_name||'', owner_phone||'', owner_wechat||'', notes||'', req.params.id]);
   res.json(get('SELECT * FROM properties WHERE id=?', [req.params.id]));

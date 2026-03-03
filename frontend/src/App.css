@@ -1,23 +1,23 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 
 :root {
-  --bg-primary: #0a0f1e;
-  --bg-secondary: #0d1528;
-  --bg-card: #111827;
-  --bg-hover: #1a2540;
-  --sidebar-bg: #060b18;
+  --bg-primary: #f5f7fa;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-hover: #f0f2f5;
+  --sidebar-bg: #ffffff;
   --accent: #3b82f6;
   --accent-light: #60a5fa;
   --accent-glow: rgba(59, 130, 246, 0.15);
   --success: #10b981;
   --warning: #f59e0b;
   --danger: #ef4444;
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #475569;
-  --border: rgba(255,255,255,0.07);
+  --text-primary: #1f2937;
+  --text-secondary: #6b7280;
+  --text-muted: #9ca3af;
+  --border: rgba(0,0,0,0.08);
   --border-accent: rgba(59, 130, 246, 0.3);
-  --shadow: 0 4px 24px rgba(0,0,0,0.4);
+  --shadow: 0 2px 8px rgba(0,0,0,0.08);
   --radius: 12px;
   --radius-sm: 8px;
 }
