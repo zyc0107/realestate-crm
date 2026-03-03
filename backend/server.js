@@ -289,10 +289,6 @@ app.put('/api/properties/:id', authMiddleware, (req, res) => {
 
   res.json(get('SELECT * FROM properties WHERE id=?', [req.params.id]));
 });
-     orientation||'', amenities||'', photo_url||'', description||'', status,
-     owner_name||'', owner_phone||'', owner_wechat||'', notes||'', req.params.id]);
-  res.json(get('SELECT * FROM properties WHERE id=?', [req.params.id]));
-});
 
 app.delete('/api/properties/:id', authMiddleware, (req, res) => {
   const existing = get('SELECT * FROM properties WHERE id=?', [req.params.id]);
